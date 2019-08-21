@@ -35,7 +35,8 @@ class bfcp(Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        init.uniform_(self.lamb)
+#        init.uniform_(self.lamb)
+        init.constant_(self.lamb, 1)
         for f in self.factors:
             init.uniform_(f)
 
@@ -61,7 +62,7 @@ class bfcp(Module):
                
         ret = 0
         for f in self.factors:
-            ret += torch.sum(torch.sum(f**2, dim=0) / self.lamb)
+            ret += torch.sum(torch.sum(f**2, dim=0) / self.lamb / 2)
         ret += torch.sum(torch.log(self.lamb))*sum(self.size)/ 2
         
 #        for f in self.factors:
@@ -76,23 +77,23 @@ class bfcp(Module):
     def prior_tau_exp(self):
         return -self.c * self.tau + torch.exp(self.tau) / self.d
         
-    def prior_theta_exp(self):        
-               
-        ret = 0
-        for f in self.factors:
-            ret += torch.sum(torch.sum(f**2, dim=0) * torch.exp(self.lamb))
-        ret += torch.sum(self.lamb)*sum(self.size)/ 2
-        
-
-        ret += -self.alpha * torch.sum(self.lamb)
-        ret += torch.sum(torch.exp(self.lamb)) / self.beta
-      
-        return ret 
-    
-    def prior_tau(self):
-        self.tau.data.clamp_min_(1e-6)
-        
-        return (self.c+1) * torch.log(self.tau) + self.d / self.tau
+#    def prior_theta_exp(self):        
+#               
+#        ret = 0
+#        for f in self.factors:
+#            ret += torch.sum(torch.sum(f**2, dim=0) * torch.exp(self.lamb))
+#        ret += torch.sum(self.lamb)*sum(self.size)/ 2
+#        
+#
+#        ret += -self.alpha * torch.sum(self.lamb)
+#        ret += torch.sum(torch.exp(self.lamb)) / self.beta
+#      
+#        return ret 
+#    
+#    def prior_tau(self):
+#        self.tau.data.clamp_min_(1e-6)
+#        
+#        return (self.c+1) * torch.log(self.tau) + self.d / self.tau
     
     
         

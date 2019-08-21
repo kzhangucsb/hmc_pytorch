@@ -15,15 +15,18 @@ tl.set_backend('pytorch')
 
 
 class tensorizedConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, in_rank, out_rank, alpha = 1, beta = 5, **kwargs):
+    def __init__(self, in_channels, out_channels, in_rank, out_rank, alpha = 1, beta = 1, **kwargs):
         super(tensorizedConv2d, self).__init__()
         self.linear_pre = nn.Linear(in_channels, in_rank)
         self.conv = nn.Conv2d(in_rank, out_rank, **kwargs)
         self.linear_post = nn.Linear(out_rank, out_channels)
         self.lamb_in  = Parameter(torch.ones(in_rank))
         self.lamb_out = Parameter(torch.ones(out_rank))
-        self.alpha = alpha
-        self.beta = beta
+        self.alpha = Parameter(torch.tensor(alpha), requires_grad=False)
+        self.beta = Parameter(torch.tensor(beta), requires_grad=False)
+        
+        self.in_channels = in_channels
+        self.out_channels = out_channels
         
         
         self._initialize_weights()
@@ -47,20 +50,20 @@ class tensorizedConv2d(nn.Module):
         self.lamb_in.data.clamp_min_(1e-6)
         self.lamb_out.data.clamp_min_(1e-6)
         ret = 0
-        ret += torch.sum(torch.sum(self.linear_pre.weight**2, dim=1) / self.lamb_in)
-        ret += torch.sum(torch.log(self.lamb_in)) / 2
-        ret += torch.sum(torch.sum(self.linear_post.weight**2, dim=0) / self.lamb_out)
-        ret += torch.sum(torch.log(self.lamb_out)) / 2
-        ret += torch.sum(self.conv.weight**2)
+        ret += torch.sum(torch.sum(self.linear_pre.weight**2, dim=1) / self.lamb_in / 2)
+        ret += torch.sum(torch.log(self.lamb_in)) * self.in_channels / 2
+        ret += torch.sum(torch.sum(self.linear_post.weight**2, dim=0) / self.lamb_out / 2)
+        ret += torch.sum(torch.log(self.lamb_out)) * self.out_channels / 2
+        ret += torch.sum(self.conv.weight**2 / 2)
         
-        ret += self.beta * torch.sum(self.lamb_in)
-        ret += self.beta * torch.sum(self.lamb_out)
+        ret += torch.sum(self.beta / self.lamb_in)
+        ret += torch.sum(self.beta / self.lamb_out)
         ret += (self.alpha + 1) * torch.sum(torch.log(self.lamb_in))
         ret += (self.alpha + 1) * torch.sum(torch.log(self.lamb_out))
         return ret
         
 class tensorizedlinear(nn.Module):
-    def __init__(self, in_size, out_size, in_rank, out_rank,  alpha = 1, beta = 5, **kwargs):
+    def __init__(self, in_size, out_size, in_rank, out_rank,  alpha = 1, beta = 1, **kwargs):
         super(tensorizedlinear, self).__init__()
         self.in_size = in_size
         self.out_size = out_size
@@ -72,8 +75,8 @@ class tensorizedlinear(nn.Module):
         self.bias = Parameter(torch.Tensor(np.prod(out_rank)))
         self.lamb_in  = ParameterList([Parameter(torch.ones(r)) for r in in_rank])
         self.lamb_out = ParameterList([Parameter(torch.ones(r)) for r in out_rank])
-        self.alpha = alpha
-        self.beta = beta
+        self.alpha = Parameter(torch.tensor(alpha), requires_grad=False)
+        self.beta = Parameter(torch.tensor(beta), requires_grad=False)
         self._initialize_weights()
         
     def forward(self, x):
@@ -102,17 +105,17 @@ class tensorizedlinear(nn.Module):
         ret = 0
         for l, f in zip(self.lamb_in, self.factors_in):
             l.data.clamp_min_(1e-6)
-            ret += torch.sum(torch.sum(f**2, dim=1) / l)
+            ret += torch.sum(torch.sum(f**2, dim=1) / l / 2)
             ret += torch.sum(torch.log(l)) / 2
-            ret += self.beta * torch.sum(l)
+            ret += torch.sum(self.beta / l)
             ret += (self.alpha + 1) * torch.sum(torch.log(l))
         for l, f in zip(self.lamb_out, self.factors_out):
             l.data.clamp_min_(1e-6)
-            ret += torch.sum(torch.sum(f**2, dim=0) / l)
+            ret += torch.sum(torch.sum(f**2, dim=0) / l / 2)
             ret += torch.sum(torch.log(l)) / 2
-            ret += self.beta * torch.sum(l)
+            ret += torch.sum(self.beta / l)
             ret += (self.alpha + 1) * torch.sum(torch.log(l))
-        ret += torch.sum(self.core ** 2) 
+        ret += torch.sum(self.core ** 2 / 2) 
         return ret
 
 class VGG(nn.Module):

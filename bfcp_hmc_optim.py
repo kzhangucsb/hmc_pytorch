@@ -22,16 +22,16 @@ from bfcp import bfcp as cp
 from tqdm import tqdm
 
 #nl = '1em2'
-nl = 'invivo'
+nl = '3em3'
 
 device = torch.device('cpu')
 args = {'num_workers': 1, 'pin_memory': True}
-#with open('../data/ktensor_noise_{}.pickle'.format(nl), 'rb') as f:
-#    p = pickle.load(f)
-#
-with open('../data/invivo.pickle', 'rb') as f:
+with open('../data/ktensor_noise_{}.pickle'.format(nl), 'rb') as f:
     p = pickle.load(f)
-    
+
+#with open('../data/invivo.pickle', 'rb') as f:
+#    p = pickle.load(f)
+#    
     
     
 size = p['size']
@@ -44,9 +44,9 @@ test_value = torch.Tensor(p['test']['values'])
 #test_norm = torch.norm(test_value).item()
 
 T = 1#e-2
-batchsize = 128
+batchsize = 40
 
-rank = 60
+rank = 15
 
 train_loader = DataLoader(TensorDataset(train_input, train_value),
         batch_size = batchsize, shuffle=True, **args)
@@ -55,28 +55,28 @@ test_loader = DataLoader(TensorDataset(test_input, test_value),
 
 criterion = nn.MSELoss()
 
-#with open('../models/cp_bayes_model_{}.pth'.format(nl), 'rb') as f:
-#    state_dict = torch.load(f)
-#    
-#ths = 0.01
-#ind = np.where(state_dict['lamb'].cpu().numpy() > ths)[0]
-#rank = len(ind)
-#state_dict['lamb'] = state_dict['lamb'][ind]
-#for i in range(3):
-#    state_dict['factors.{}'.format(i)] = state_dict['factors.{}'.format(i)][:, ind] 
-#    
-model = cp(size, rank, beta = 0.2)
+with open('../models/cp_bayes_model_{}.pth'.format(nl), 'rb') as f:
+    state_dict = torch.load(f)
+    
+ths = 0.05
+ind = np.where(state_dict['lamb'].cpu().numpy() > ths)[0]
+rank = len(ind)
+state_dict['lamb'] = state_dict['lamb'][ind]
+for i in range(3):
+    state_dict['factors.{}'.format(i)] = state_dict['factors.{}'.format(i)][:, ind] 
+    
+model = cp(size, rank)
 #model.to(device)
-#model.load_state_dict(state_dict)
+model.load_state_dict(state_dict)
     
 
     
-sampler = hmcsampler([{'params':model.factors, 'max_length': 1e-2},
-                    {'params':model.lamb, 'mass': 1e2, 'max_length': 1e-2},
-                    {'params':model.tau, 'mass': 1e2}], 
-    frac_adj= 1, max_step_size=0.1)
+sampler = hmcsampler([{'params':model.factors, 'max_length': 0.001}, # 'max_length': 1e-2
+                    {'params':model.lamb, 'mass': 1e2, 'max_length': 0.01},#'mass': 1e2, 'max_length': 1e-2
+                    {'params':model.tau, 'mass': 1}], #'mass': 1e2
+    frac_adj= 1, max_step_size=0.01)
 
-while (len(sampler.samples) <500):
+while (len(sampler.samples) <1000):
     loss_train = 0
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
@@ -145,7 +145,7 @@ while (len(sampler.samples) <500):
 results = [] 
 tau = []
 pbar = tqdm(total=200)
-for i in range(300, 500):
+for i in range(800, 1000):
     sampler.load_sample_index(i)
     results.append(model.full().detach().cpu().numpy())
     tau.append(model.tau.detach().cpu().numpy())
