@@ -15,7 +15,7 @@ tl.set_backend('pytorch')
 
 
 class tensorizedConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, in_rank, out_rank, alpha = 1, beta = 1, **kwargs):
+    def __init__(self, in_channels, out_channels, in_rank, out_rank, alpha = 1, beta = 0.2, **kwargs):
         super(tensorizedConv2d, self).__init__()
         self.linear_pre = nn.Linear(in_channels, in_rank)
         self.conv = nn.Conv2d(in_rank, out_rank, **kwargs)
@@ -54,7 +54,11 @@ class tensorizedConv2d(nn.Module):
         ret += torch.sum(torch.log(self.lamb_in)) * self.in_channels / 2
         ret += torch.sum(torch.sum(self.linear_post.weight**2, dim=0) / self.lamb_out / 2)
         ret += torch.sum(torch.log(self.lamb_out)) * self.out_channels / 2
-        ret += torch.sum(self.conv.weight**2 / 2)
+        #ret += torch.sum(self.conv.weight**2 / 2)
+        conv2 = self.conv.weight**2
+        conv2 /= self.lamb_out.reshape([-1, 1, 1, 1])
+        conv2 /= self.lamb_in.reshape([1, -1, 1, 1])
+        ret += torch.sum(conv2) / 2
         
         ret += torch.sum(self.beta / self.lamb_in)
         ret += torch.sum(self.beta / self.lamb_out)
@@ -63,7 +67,7 @@ class tensorizedConv2d(nn.Module):
         return ret
         
 class tensorizedlinear(nn.Module):
-    def __init__(self, in_size, out_size, in_rank, out_rank,  alpha = 1, beta = 1, **kwargs):
+    def __init__(self, in_size, out_size, in_rank, out_rank,  alpha = 1, beta = 0.2, **kwargs):
         super(tensorizedlinear, self).__init__()
         self.in_size = in_size
         self.out_size = out_size
@@ -103,19 +107,30 @@ class tensorizedlinear(nn.Module):
         
     def regularizer(self):
         ret = 0
-        for l, f in zip(self.lamb_in, self.factors_in):
+        for l, f, s in zip(self.lamb_in, self.factors_in, self.in_size):
             l.data.clamp_min_(1e-6)
             ret += torch.sum(torch.sum(f**2, dim=1) / l / 2)
-            ret += torch.sum(torch.log(l)) / 2
+            ret += s * torch.sum(torch.log(l)) / 2
             ret += torch.sum(self.beta / l)
             ret += (self.alpha + 1) * torch.sum(torch.log(l))
-        for l, f in zip(self.lamb_out, self.factors_out):
+        for l, f, s in zip(self.lamb_out, self.factors_out, self.out_size):
             l.data.clamp_min_(1e-6)
             ret += torch.sum(torch.sum(f**2, dim=0) / l / 2)
-            ret += torch.sum(torch.log(l)) / 2
+            ret += s * torch.sum(torch.log(l)) / 2
             ret += torch.sum(self.beta / l)
             ret += (self.alpha + 1) * torch.sum(torch.log(l))
-        ret += torch.sum(self.core ** 2 / 2) 
+#        ret += torch.sum(self.core ** 2 / 2) 
+        core_shape = list(self.out_rank) + list(self.in_rank)
+        core = self.core.reshape(core_shape)
+        core = core ** 2
+        for d, l in enumerate(list(self.lamb_out) + list(self.lamb_in)):
+            s = [1] * len(core_shape)
+            s[d] = -1
+            l = l.reshape(s)
+            core = core / l
+
+        ret += torch.sum(core) / 2
+        
         return ret
 
 class VGG(nn.Module):
@@ -129,7 +144,7 @@ class VGG(nn.Module):
         if tensorized[0] is None:
             l1 = nn.Linear(512 * 7 * 7, 4096)
         else:
-            l1 = tensorizedlinear((512, 49), (64, 64), tensorized[0][0], tensorized[0][1])
+            l1 = tensorizedlinear((32, 16, 49), (64, 64), tensorized[0][0], tensorized[0][1])
         if tensorized[1] is None:
             l2 = nn.Linear(4096, 4096)
         else:

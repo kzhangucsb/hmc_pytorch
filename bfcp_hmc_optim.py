@@ -17,12 +17,12 @@ import pickle
 from torch.utils.data import TensorDataset, DataLoader
 import torch.optim as optim
 #from cp import cp
-from bfcp import bfcp as cp
+from bfcp import bfcp as cp, regulized_loss
 
 from tqdm import tqdm
 
 #nl = '1em2'
-nl = '3em3'
+nl = '3em2'
 
 device = torch.device('cpu')
 args = {'num_workers': 1, 'pin_memory': True}
@@ -65,13 +65,14 @@ state_dict['lamb'] = state_dict['lamb'][ind]
 for i in range(3):
     state_dict['factors.{}'.format(i)] = state_dict['factors.{}'.format(i)][:, ind] 
     
+print('rank={}'.format(rank))
 model = cp(size, rank)
 #model.to(device)
 model.load_state_dict(state_dict)
     
 
     
-sampler = hmcsampler([{'params':model.factors, 'max_length': 0.001}, # 'max_length': 1e-2
+sampler = hmcsampler([{'params':model.factors, 'max_length': 0.002}, # 'max_length': 1e-2
                     {'params':model.lamb, 'mass': 1e2, 'max_length': 0.01},#'mass': 1e2, 'max_length': 1e-2
                     {'params':model.tau, 'mass': 1}], #'mass': 1e2
     frac_adj= 1, max_step_size=0.01)
@@ -83,11 +84,12 @@ while (len(sampler.samples) <1000):
         sampler.zero_grad()
         out = model(data)
         loss = criterion(out, target)
-        loss_train += loss.item() ** 0.5 
-        loss *= len(train_loader.dataset)
-#        loss *= len(data)
-        loss *= torch.exp(model.tau)
-        loss -= 0.5 * len(train_loader.dataset) * model.tau
+        loss_train += loss.item()
+#        loss *= len(train_loader.dataset)
+##        loss *= len(data)
+#        loss *= torch.exp(model.tau)
+#        loss -= 0.5 * len(train_loader.dataset) * model.tau
+        loss = regulized_loss(loss, model, len(train_loader.dataset))
         
         loss /= T
 
@@ -99,14 +101,16 @@ while (len(sampler.samples) <1000):
 
         
     loss_train /= len(train_loader)
+    loss_train = loss_train ** 0.5
    
     with torch.no_grad():
         loss_test = 0
         for batch_idx, (data, target) in enumerate(test_loader):
             data, target = data.to(device), target.to(device)
             out = model(data)
-            loss_test += criterion(out, target).item() ** 0.5 
+            loss_test += criterion(out, target).item()
         loss_test /= len(test_loader) 
+        loss_test = loss_test ** 0.5
     print('Samples {} training loss {} testing loss {}'.format(len(sampler.samples), loss_train, loss_test))
     
     

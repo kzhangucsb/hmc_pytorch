@@ -27,14 +27,14 @@ if __name__ == '__main__':
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                         help='input batch size for testing (default: 1000)')
-    parser.add_argument('--epochs', type=int, default=150, metavar='N',
+    parser.add_argument('--epochs', type=int, default=300, metavar='N',
                         help='number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=0.02, metavar='LR',
                         help='learning rate (default: 0.02)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                         help='SGD momentum (default: 0.9)')
-    parser.add_argument('--weight-decay', type=float, default=5e-4, metavar='M',
-                        help='weight decay (default: 5e-4)')
+    parser.add_argument('--weight-decay', type=float, default=0, metavar='M',
+                        help='weight decay (default: 0)')#5e-4
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='disables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
@@ -78,38 +78,36 @@ if __name__ == '__main__':
 #            None, None, None]
 #            #((32, 32), (32, 32)), ((32, 32), (32, 32)), ((32, 32), (10,))]
             
-    rank = [None, None, (128, 128), None, (256, 256), (256, 256), None, 
-            (512, 512), (512, 512), None, (512, 512), (512, 512), None, 
+    rank = [(3, 64),(64, 64), None, (64, 128),(128, 128), None, (128, 256), (256, 256),(256, 256), None, 
+            (256, 512), (512, 512), (512, 512), None, (512, 512), (512, 512),(512, 512), None, 
             #None, None, None, None, None, None, None, None, None, None, None, None, None,
             #None, None, None]
-            ((64, 64), (64, 64)), ((64, 64), (64, 64)), ((64, 64), (10,))]
-    model = vgg11_bn(rank).to(device)
+            ((32, 16, 49), (64, 64)), ((64, 64), (64, 64)), ((64, 64), (10,))]
+    model = vgg16_bn(rank).to(device)
 #    model = models.vgg11_bn().to(device)
     optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, 
                           weight_decay=args.weight_decay)
 #    optimizer = optim.Adam(model.parameters(), lr=args.lr)
-
+    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: (epoch+1)**(-0.5))
     for epoch in range(1, args.epochs + 1):
         model.train()
-        bar = tqdm(total=len(train_loader.dataset), desc='Iter {}'.format(epoch))
-#    for batch_idx, (data, target) in enumerate(train_loader):
-        for batch_idx in range(len(train_loader)):
-            (data, target) = next(iter(train_loader))
-            data, target = data.to(device), target.to(device)
-            optimizer.zero_grad()
-            output = model(data)
-            loss = F.cross_entropy(output, target)
-            loss += model.regularizer() / 1e4
-            loss.backward()
-            optimizer.step()
-#            if batch_idx % args.log_interval == 0:
-#                print('\rTrain Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-#                    epoch, batch_idx * len(data), len(train_loader.dataset),
-#                    100. * batch_idx / len(train_loader), loss.item()), end='')
-            bar.set_postfix_str('loss: {}'.format(loss.item()), refresh=False)
-            bar.update(len(data))
+        with tqdm(total=len(train_loader.dataset), desc='Iter {}'.format(epoch)) as bar:
+            for batch_idx, (data, target) in enumerate(train_loader):
+                data, target = data.to(device), target.to(device)
+                optimizer.zero_grad()
+                output = model(data)
+                loss = F.cross_entropy(output, target)
+                loss += model.regularizer() / len(train_loader.dataset)
+                loss.backward()
+                optimizer.step()
+    #            if batch_idx % args.log_interval == 0:
+    #                print('\rTrain Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+    #                    epoch, batch_idx * len(data), len(train_loader.dataset),
+    #                    100. * batch_idx / len(train_loader), loss.item()), end='')
+                bar.set_postfix_str('loss: {:0.6f}'.format(loss.item()), refresh=False)
+                bar.update(len(data))
             
-        bar.close()
+
         model.eval()
         test_loss = 0
         correct = 0
@@ -122,6 +120,9 @@ if __name__ == '__main__':
                 correct += pred.eq(target.view_as(pred)).sum().item()
 
         test_loss /= len(test_loader.dataset)
+
+        if (epoch + 1) % 30 == 0:
+            scheduler.step()
 
         print('Test set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)'.format(
             test_loss, correct, len(test_loader.dataset),

@@ -1,3 +1,9 @@
+"""
+Created on Thu Aug  8 10:41:12 2019
+
+@author: zkq
+"""
+
 from __future__ import print_function
 import argparse
 import torch
@@ -5,13 +11,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms, models
-from tqdm import tqdm
-#from hmc_sampler_optimizer import hmcsampler
+from vgg_tensor import *
+#from torchvision.models.vgg import *
 
 
 
     
-
 if __name__ == '__main__':
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
@@ -21,12 +26,12 @@ if __name__ == '__main__':
                         help='input batch size for testing (default: 1000)')
     parser.add_argument('--epochs', type=int, default=150, metavar='N',
                         help='number of epochs to train (default: 10)')
-    parser.add_argument('--lr', type=float, default=0.04, metavar='LR',
-                        help='learning rate (default: 0.04)')
+    parser.add_argument('--lr', type=float, default=0.02, metavar='LR',
+                        help='learning rate (default: 0.02)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                         help='SGD momentum (default: 0.9)')
-    parser.add_argument('--weight-decay', '--wd', default=5e-4, type=float,
-                    metavar='W', help='weight decay (default: 5e-4)')
+    parser.add_argument('--weight-decay', type=float, default=5e-4, metavar='M',
+                        help='weight decay (default: 5e-4)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='disables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
@@ -41,7 +46,8 @@ if __name__ == '__main__':
 
     torch.manual_seed(args.seed)
 
-#    torch.cuda.set_device(1)
+    if use_cuda:
+        torch.cuda.set_device(3)
     device = torch.device("cuda" if use_cuda else "cpu")
 
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
@@ -52,41 +58,44 @@ if __name__ == '__main__':
                            transforms.RandomCrop(32, 4),
                            transforms.ToTensor(),
                            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
+                                     std=[0.229, 0.224, 0.225]),
                        ])),
         batch_size=args.batch_size, shuffle=True, **kwargs)
     test_loader = torch.utils.data.DataLoader(
         datasets.CIFAR10('../data', train=False, transform=transforms.Compose([
                            transforms.ToTensor(),
                            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                     std=[0.229, 0.224, 0.225])
+                                     std=[0.229, 0.224, 0.225]),
                        ])),
         batch_size=args.test_batch_size, shuffle=False, **kwargs)
 
-
-#    model = Net().to(device)
-    model = models.vgg16_bn(num_classes=10).to(device)
-    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    #optimizer = hmcsampler(model.parameters())
-    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: (epoch+1)**(-0.5))
+    rank = [None, None, (64, 64), None, (96, 96), (96, 96), None, 
+            (128, 128), (128, 128), None, (128, 128), (128, 128), None, 
+            #None, None, None, None, None, None, None, None, None, None, None, None, None,
+            None, None, None]
+            #((32, 32), (32, 32)), ((32, 32), (32, 32)), ((32, 32), (10,))]
+    model = vgg11_bn(rank).to(device)
+#    model = models.vgg11_bn().to(device)
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, 
+                          weight_decay=args.weight_decay)
+#    optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     for epoch in range(1, args.epochs + 1):
         model.train()
-        with tqdm(total=len(train_loader.dataset), desc='Iter {}'.format(epoch)) as bar:
-            for batch_idx, (data, target) in enumerate(train_loader):
-                data, target = data.to(device), target.to(device)
-                optimizer.zero_grad()
-                output = model(data)
-                loss = F.cross_entropy(output, target)
-                loss.backward()
-                optimizer.step()
-                bar.set_postfix_str('loss: {:0.6f}'.format(loss.item()), refresh=False)
-                bar.update(len(data))
-#            if batch_idx % args.log_interval == 0:
-#                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-#                    epoch, batch_idx * len(data), len(train_loader.dataset),
-#                    100. * batch_idx / len(train_loader), loss.item()))
-                
+#    for batch_idx, (data, target) in enumerate(train_loader):
+        for batch_idx in range(len(train_loader)):
+            (data, target) = next(iter(train_loader))
+            data, target = data.to(device), target.to(device)
+            optimizer.zero_grad()
+            output = model(data)
+            loss = F.cross_entropy(output, target)
+            loss.backward()
+            optimizer.step()
+            if batch_idx % args.log_interval == 0:
+                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                    epoch, batch_idx * len(data), len(train_loader.dataset),
+                    100. * batch_idx / len(train_loader), loss.item()))
+            
             
         model.eval()
         test_loss = 0
@@ -98,17 +107,15 @@ if __name__ == '__main__':
                 test_loss += F.cross_entropy(output, target, reduction='sum').item() # sum up batch loss
                 pred = output.argmax(dim=1, keepdim=True) # get the index of the max log-probability
                 correct += pred.eq(target.view_as(pred)).sum().item()
-    
+
         test_loss /= len(test_loader.dataset)
-        if (epoch + 1) % 20 == 0:
-            scheduler.step()
-    
-        print('Test set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)'.format(
+
+        print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
             test_loss, correct, len(test_loader.dataset),
-            100. * correct / len(test_loader.dataset)), flush=True)
+            100. * correct / len(test_loader.dataset)))
 
     if (args.save_model):
-        torch.save(model.state_dict(),"../models/cifar_vgg16.pth")
+        torch.save(model.state_dict(),"cifar_tensor.pth")
         
 
 

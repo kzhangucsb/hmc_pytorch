@@ -95,26 +95,25 @@ if __name__ == '__main__':
     while(len(sampler.samples) < 200):
         epoch += 1
         model.train()
-        bar = tqdm(total=len(train_loader.dataset), desc='Iter {}'.format(epoch))
-#    for batch_idx, (data, target) in enumerate(train_loader):
-        for batch_idx in range(len(train_loader)):
-            (data, target) = next(iter(train_loader))
-            data, target = data.to(device), target.to(device)
-            sampler.zero_grad()
-            output = model(data)
-            loss = F.cross_entropy(output, target)
-            loss += model.regularizer() / 1e4
-            loss /= args.temperature
-            loss.backward()
-            sampler.step()
-#            if batch_idx % args.log_interval == 0:
-#                print('\rTrain Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-#                    epoch, batch_idx * len(data), len(train_loader.dataset),
-#                    100. * batch_idx / len(train_loader), loss.item()), end='')
-            bar.set_postfix_str('loss: {}'.format(loss.item()), refresh=False)
-            bar.update(len(data))
-            
-        bar.close()
+        with tqdm(total=len(train_loader.dataset), desc='Iter {}'.format(epoch)) as bar:
+            for batch_idx, (data, target) in enumerate(train_loader):
+          
+                data, target = data.to(device), target.to(device)
+                sampler.zero_grad()
+                output = model(data)
+                loss = F.cross_entropy(output, target)
+                loss += model.regularizer() / 1e4
+                loss /= args.temperature
+                loss.backward()
+                sampler.step()
+    #            if batch_idx % args.log_interval == 0:
+    #                print('\rTrain Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+    #                    epoch, batch_idx * len(data), len(train_loader.dataset),
+    #                    100. * batch_idx / len(train_loader), loss.item()), end='')
+                bar.set_postfix_str('loss: {:0.6f}'.format(loss.item()), refresh=False)
+                bar.update(len(data))
+                
+
         model.eval()
         test_loss = 0
         correct = 0

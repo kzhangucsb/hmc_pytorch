@@ -54,15 +54,15 @@ if __name__ == '__main__':
                            transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
                        ])),
-        batch_size=args.test_batch_size, shuffle=True, **kwargs)
+        batch_size=args.test_batch_size, shuffle=False, **kwargs)
 
 
 #    model = Net().to(device)
-    model = models.vgg11_bn(num_classes=10).to(device)
-    with open("../models/cifar_vgg11.pth", 'rb') as f:
+    model = models.vgg16_bn(num_classes=10).to(device)
+    with open("../models/cifar_vgg16.pth", 'rb') as f:
         model.load_state_dict(torch.load(f, map_location=device))
     #optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    sampler = hmcsampler(model.parameters(), samples_dir="../models/cifar_vgg11_samples")
+    sampler = hmcsampler(model.parameters(), samples_dir="../models/cifar_vgg16_samples")
 
     epoch = 0
     while(len(sampler.samples) < 200):
@@ -81,7 +81,7 @@ if __name__ == '__main__':
 #                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
 #                    epoch, batch_idx * len(data), len(train_loader.dataset),
 #                    100. * batch_idx / len(train_loader), loss.item()))
-            bar.set_postfix_str('loss: {}'.format(loss.item()), refresh=False)
+            bar.set_postfix_str('loss: {:0.6f}'.format(loss.item()), refresh=False)
             bar.update(len(data))
         bar.close()   
             
@@ -98,9 +98,9 @@ if __name__ == '__main__':
 
         test_loss /= len(test_loader.dataset)
     
-        print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+        print('Test set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)'.format(
             test_loss, correct, len(test_loader.dataset),
-            100. * correct / len(test_loader.dataset)))
+            100. * correct / len(test_loader.dataset)), flush=True)
             
             
             

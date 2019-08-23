@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+
 """
 Created on Sun Jul 28 17:20:21 2019
 
@@ -16,7 +15,7 @@ import torch.optim as optim
 import pickle
 from torch.utils.data import TensorDataset, DataLoader
 #from cp import cp
-from bfcp import bfcp as cp
+from bfcp import bfcp as cp, regulized_loss
 import tensorly as tl
 device = torch.device('cpu')
 args = dict()#{'num_workers': 1, 'pin_memory': True}
@@ -24,7 +23,7 @@ batchsize = 40
 batchsize_test = 5000
 nepoch = 5000
 
-nl = '3em3'
+nl = '1em2'
 svd_init = False
 fix_tau = False
 
@@ -41,7 +40,7 @@ test_input = torch.LongTensor(p['test']['indexes']).t()
 test_value = torch.Tensor(p['test']['values'])
 #test_norm = torch.norm(test_value).item()
 
-model = cp(size, rank, beta=1, d=1e6)#,  beta = 1, c = 1)#5, 1e4) # beta=0.2, c=10)
+model = cp(size, rank, beta=1, d=1e4)#,  beta = 1, c = 1)#5, 1e4) # beta=0.2, c=10)
 
 
 if svd_init:
@@ -100,11 +99,12 @@ for epoch in range(nepoch):
         loss = criterion(out, target)
         
         loss_train += loss.item() 
-        loss *= (len(train_loader.dataset) * torch.exp(model.tau)/2)
-        loss -= 0.5 * len(train_loader.dataset) * model.tau
-        
-        loss += model.prior_theta() #/ 1e2  #/ len(data)
-        loss += model.prior_tau_exp() #/ 1e2 # 1e-2
+#        loss *= (len(train_loader.dataset) * torch.exp(model.tau)/2)
+#        loss -= 0.5 * len(train_loader.dataset) * model.tau
+#        
+#        loss += model.prior_theta() #/ 1e2  #/ len(data)
+#        loss += model.prior_tau_exp() #/ 1e2 # 1e-2
+        loss = regulized_loss(loss, model, len(train_loader.dataset))
         
         loss.backward()
         optimizer.step()
@@ -130,7 +130,7 @@ plt.semilogy(np.arange(nepoch+1), loss_log[0], label='train')
 plt.semilogy(np.arange(nepoch+1), loss_log[1], label='test')
 plt.legend()
 plt.show()
-with open('../models/cp_bayes_model_{}.pth'.format(nl), 'wb') as f:
-    torch.save(model.state_dict(), f)
+#with open('../models/cp_bayes_model_{}.pth'.format(nl), 'wb') as f:
+#    torch.save(model.state_dict(), f)
 
 #with open('cp_bayes_model_invivo.pth'.format(nl), 'wb') as f:

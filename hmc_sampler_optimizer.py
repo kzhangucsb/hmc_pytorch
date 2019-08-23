@@ -20,6 +20,7 @@ import numpy as np
 import warnings
 from copy import deepcopy
 import os
+import threading
 # from default_potential import vanilla_potential as df_poten
 # from binary_potential import   Binary_potnetial as bp_poten
 
@@ -53,6 +54,8 @@ class hmcsampler(Optimizer):
         self._reset_v()
         self.step_eclipsed = 0
         self._step_size = 0
+        
+        self.save_thread = None
         
     def step(self, closure=None):
         """Performs a single optimization step.
@@ -99,8 +102,13 @@ class hmcsampler(Optimizer):
         else:
             fname = 'sample_{}.pth'.format(len(self.samples))
             fname_full = os.path.join(self.samples_dir, fname)
-            torch.save(s, fname_full)
+#            torch.save(s, fname_full)
             self.samples.append(fname_full)
+            if self.save_thread is not None:
+                self.save_thread.join()
+            self.save_thread = threading.Thread(target=torch.save, args=(s, fname_full))
+            self.save_thread.start()
+            
                 
             
 
