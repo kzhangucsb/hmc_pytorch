@@ -80,12 +80,12 @@ if __name__ == '__main__':
 #            None, None, None]
 #            #((32, 32), (32, 32)), ((32, 32), (32, 32)), ((32, 32), (10,))]
             
-    rank = [None, None, (128, 128), None, (256, 256), (256, 256), None, 
-            (512, 512), (512, 512), None, (512, 512), (512, 512), None, 
-            #None, None, None, None, None, None, None, None, None, None, None, None, None,
-            #None, None, None]
-            ((64, 64), (64, 64)), ((64, 64), (64, 64)), ((64, 64), (10,))]
-    model = vgg11_bn(rank).to(device)
+#    rank = [None, None, (128, 128), None, (256, 256), (256, 256), None, 
+#            (512, 512), (512, 512), None, (512, 512), (512, 512), None, 
+#            #None, None, None, None, None, None, None, None, None, None, None, None, None,
+#            #None, None, None]
+#            ((64, 64), (64, 64)), ((64, 64), (64, 64)), ((64, 64), (10,))]
+    model = vgg16_bn(rank).to(device)
     with open("../models/cifar_tensor_reg.pth", 'rb') as f:
         model.load_state_dict(torch.load(f, map_location=device))
 #    model = models.vgg11_bn().to(device)

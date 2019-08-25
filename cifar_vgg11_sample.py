@@ -6,8 +6,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms, models
 from tqdm import tqdm
-from hmc_sampler_optimizer import hmcsampler
-
+from hmc_sampler_optimizer import hmcsampler, modelsaver_test
 
 
 
@@ -24,8 +23,8 @@ if __name__ == '__main__':
                         help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--temperature', type=float, default=1e-6, metavar='N',
-                        help='HMC temperature')
+#    parser.add_argument('--temperature', type=float, default=1e-6, metavar='N',
+#                        help='HMC temperature')
     
     parser.add_argument('--save-model', action='store_true', default=True,
                         help='For Saving the current Model')
@@ -61,8 +60,17 @@ if __name__ == '__main__':
     model = models.vgg16_bn(num_classes=10).to(device)
     with open("../models/cifar_vgg16.pth", 'rb') as f:
         model.load_state_dict(torch.load(f, map_location=device))
-    #optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    sampler = hmcsampler(model.parameters(), samples_dir="../models/cifar_vgg16_samples")
+        
+    def forwardfcn(x):
+        model.eval()
+        with torch.no_grad():
+            x = x.to(device)
+            x = model(x)
+            x = x.cpu()
+        model.train()
+        return x
+            
+    sampler = hmcsampler(model.parameters(), sampler=modelsaver_test(forwardfcn, test_loader))
 
     epoch = 0
     while(len(sampler.samples) < 200):
@@ -74,7 +82,7 @@ if __name__ == '__main__':
             sampler.zero_grad()
             output = model(data)
             loss = F.cross_entropy(output, target)
-            loss /= args.temperature
+            loss *= len(train_loader.dataset)*10
             loss.backward()
             sampler.step()
 #            if batch_idx % args.log_interval == 0:
@@ -85,22 +93,22 @@ if __name__ == '__main__':
             bar.update(len(data))
         bar.close()   
             
-        model.eval()
-        test_loss = 0
-        correct = 0
-        with torch.no_grad():
-            for data, target in test_loader:
-                data, target = data.to(device), target.to(device)
-                output = model(data)
-                test_loss += F.cross_entropy(output, target, reduction='sum').item() # sum up batch loss
-                pred = output.argmax(dim=1, keepdim=True) # get the index of the max log-probability
-                correct += pred.eq(target.view_as(pred)).sum().item()
-
-        test_loss /= len(test_loader.dataset)
-    
-        print('Test set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)'.format(
-            test_loss, correct, len(test_loader.dataset),
-            100. * correct / len(test_loader.dataset)), flush=True)
+#        model.eval()
+#        test_loss = 0
+#        correct = 0
+#        with torch.no_grad():
+#            for data, target in test_loader:
+#                data, target = data.to(device), target.to(device)
+#                output = model(data)
+#                test_loss += F.cross_entropy(output, target, reduction='sum').item() # sum up batch loss
+#                pred = output.argmax(dim=1, keepdim=True) # get the index of the max log-probability
+#                correct += pred.eq(target.view_as(pred)).sum().item()
+#
+#        test_loss /= len(test_loader.dataset)
+#    
+#        print('Test set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)'.format(
+#            test_loss, correct, len(test_loader.dataset),
+#            100. * correct / len(test_loader.dataset)), flush=True)
             
             
             

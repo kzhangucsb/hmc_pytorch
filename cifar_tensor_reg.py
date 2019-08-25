@@ -24,13 +24,13 @@ if __name__ == '__main__':
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
     parser.add_argument('--batch-size', type=int, default=128, metavar='N',
-                        help='input batch size for training (default: 64)')
+                        help='input batch size for training (default: 128)')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                         help='input batch size for testing (default: 1000)')
     parser.add_argument('--epochs', type=int, default=300, metavar='N',
                         help='number of epochs to train (default: 10)')
-    parser.add_argument('--lr', type=float, default=0.02, metavar='LR',
-                        help='learning rate (default: 0.02)')
+    parser.add_argument('--lr', type=float, default=0.04, metavar='LR',
+                        help='learning rate (default: 0.04)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                         help='SGD momentum (default: 0.9)')
     parser.add_argument('--weight-decay', type=float, default=0, metavar='M',
@@ -78,8 +78,10 @@ if __name__ == '__main__':
 #            None, None, None]
 #            #((32, 32), (32, 32)), ((32, 32), (32, 32)), ((32, 32), (10,))]
             
-    rank = [(3, 64),(64, 64), None, (64, 128),(128, 128), None, (128, 256), (256, 256),(256, 256), None, 
-            (256, 512), (512, 512), (512, 512), None, (512, 512), (512, 512),(512, 512), None, 
+    rank = [(3, 64),(64, 64), None, (64, 96),(96, 96), None, (96, 128), (128, 128),(128, 128), None, 
+            (128, 256), (256, 256), (256, 256), None, (256, 256), (256, 256),(256, 256), None, 
+#            [(3, 64),(64, 64), None, (64, 128),(128, 128), None, (128, 256), (256, 256),(256, 256), None, 
+#            (256, 512), (512, 512), (512, 512), None, (512, 512), (512, 512),(512, 512), None, 
             #None, None, None, None, None, None, None, None, None, None, None, None, None,
             #None, None, None]
             ((32, 16, 49), (64, 64)), ((64, 64), (64, 64)), ((64, 64), (10,))]

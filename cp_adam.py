@@ -40,7 +40,7 @@ test_input = torch.LongTensor(p['test']['indexes']).t()
 test_value = torch.Tensor(p['test']['values'])
 #test_norm = torch.norm(test_value).item()
 
-model = cp(size, rank, beta=1, d=1e4)#,  beta = 1, c = 1)#5, 1e4) # beta=0.2, c=10)
+model = cp(size, rank, beta=1, d=1e4)#, beta = 1, c = 1)#5, 1e4) # beta=0.2, c=10)
 
 
 if svd_init:

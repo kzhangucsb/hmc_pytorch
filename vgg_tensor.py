@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+
 """
 Created on Wed Aug  7 10:47:36 2019
 
@@ -11,127 +10,11 @@ import torch.nn as nn
 import tensorly as tl
 from torch.nn import Parameter, ParameterList
 import numpy as np
+from tensor_layer import tensorizedlinear, tensorizedConv2d
 tl.set_backend('pytorch')
 
 
-class tensorizedConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, in_rank, out_rank, alpha = 1, beta = 0.2, **kwargs):
-        super(tensorizedConv2d, self).__init__()
-        self.linear_pre = nn.Linear(in_channels, in_rank)
-        self.conv = nn.Conv2d(in_rank, out_rank, **kwargs)
-        self.linear_post = nn.Linear(out_rank, out_channels)
-        self.lamb_in  = Parameter(torch.ones(in_rank))
-        self.lamb_out = Parameter(torch.ones(out_rank))
-        self.alpha = Parameter(torch.tensor(alpha), requires_grad=False)
-        self.beta = Parameter(torch.tensor(beta), requires_grad=False)
-        
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        
-        
-        self._initialize_weights()
-        
-    def forward(self, x):
-        x = torch.transpose(x, 1, 3)
-        x = self.linear_pre(x)
-        x = torch.transpose(x, 1, 3)
-        
-        x = self.conv(x)
-        
-        x = torch.transpose(x, 1, 3)
-        x = self.linear_post(x)
-        x = torch.transpose(x, 1, 3)
-        return x
-    
-    def _initialize_weights(self):
-        pass
-    
-    def regularizer(self):
-        self.lamb_in.data.clamp_min_(1e-6)
-        self.lamb_out.data.clamp_min_(1e-6)
-        ret = 0
-        ret += torch.sum(torch.sum(self.linear_pre.weight**2, dim=1) / self.lamb_in / 2)
-        ret += torch.sum(torch.log(self.lamb_in)) * self.in_channels / 2
-        ret += torch.sum(torch.sum(self.linear_post.weight**2, dim=0) / self.lamb_out / 2)
-        ret += torch.sum(torch.log(self.lamb_out)) * self.out_channels / 2
-        #ret += torch.sum(self.conv.weight**2 / 2)
-        conv2 = self.conv.weight**2
-        conv2 /= self.lamb_out.reshape([-1, 1, 1, 1])
-        conv2 /= self.lamb_in.reshape([1, -1, 1, 1])
-        ret += torch.sum(conv2) / 2
-        
-        ret += torch.sum(self.beta / self.lamb_in)
-        ret += torch.sum(self.beta / self.lamb_out)
-        ret += (self.alpha + 1) * torch.sum(torch.log(self.lamb_in))
-        ret += (self.alpha + 1) * torch.sum(torch.log(self.lamb_out))
-        return ret
-        
-class tensorizedlinear(nn.Module):
-    def __init__(self, in_size, out_size, in_rank, out_rank,  alpha = 1, beta = 0.2, **kwargs):
-        super(tensorizedlinear, self).__init__()
-        self.in_size = in_size
-        self.out_size = out_size
-        self.in_rank = in_rank
-        self.out_rank = out_rank
-        self.factors_in  = ParameterList([Parameter(torch.Tensor(r, s)) for (r, s) in zip(in_rank, in_size)])
-        self.factors_out = ParameterList([Parameter(torch.Tensor(s, r)) for (r, s) in zip(out_rank, out_size)])
-        self.core = Parameter(torch.Tensor(np.prod(out_rank), np.prod(in_rank)))
-        self.bias = Parameter(torch.Tensor(np.prod(out_rank)))
-        self.lamb_in  = ParameterList([Parameter(torch.ones(r)) for r in in_rank])
-        self.lamb_out = ParameterList([Parameter(torch.ones(r)) for r in out_rank])
-        self.alpha = Parameter(torch.tensor(alpha), requires_grad=False)
-        self.beta = Parameter(torch.tensor(beta), requires_grad=False)
-        self._initialize_weights()
-        
-    def forward(self, x):
-        x = x.reshape((x.shape[0], *self.in_size))
-        for i in range(len(self.factors_in)):
-            x = tl.tenalg.mode_dot(x, self.factors_in[i], i+1)
-        x = x.reshape((x.shape[0], -1))
-        x = torch.nn.functional.linear(x, self.core, self.bias)
-        x = x.reshape((x.shape[0], *self.out_rank))
-        for i in range(len(self.factors_out)):
-            x = tl.tenalg.mode_dot(x, self.factors_out[i], i+1)
-        x = x.reshape((x.shape[0], -1))
-        x /= np.prod(self.out_rank) **0.5
-        return x
-    
-    def _initialize_weights(self):
-        for f in self.factors_in:
-            nn.init.kaiming_uniform_(f)
-        for f in self.factors_out:
-            nn.init.kaiming_uniform_(f)
-        nn.init.kaiming_uniform_(self.core)
-#        self.core.data /= np.prod(self.out_rank) **0.5
-        nn.init.constant_(self.bias, 0)
-        
-    def regularizer(self):
-        ret = 0
-        for l, f, s in zip(self.lamb_in, self.factors_in, self.in_size):
-            l.data.clamp_min_(1e-6)
-            ret += torch.sum(torch.sum(f**2, dim=1) / l / 2)
-            ret += s * torch.sum(torch.log(l)) / 2
-            ret += torch.sum(self.beta / l)
-            ret += (self.alpha + 1) * torch.sum(torch.log(l))
-        for l, f, s in zip(self.lamb_out, self.factors_out, self.out_size):
-            l.data.clamp_min_(1e-6)
-            ret += torch.sum(torch.sum(f**2, dim=0) / l / 2)
-            ret += s * torch.sum(torch.log(l)) / 2
-            ret += torch.sum(self.beta / l)
-            ret += (self.alpha + 1) * torch.sum(torch.log(l))
-#        ret += torch.sum(self.core ** 2 / 2) 
-        core_shape = list(self.out_rank) + list(self.in_rank)
-        core = self.core.reshape(core_shape)
-        core = core ** 2
-        for d, l in enumerate(list(self.lamb_out) + list(self.lamb_in)):
-            s = [1] * len(core_shape)
-            s[d] = -1
-            l = l.reshape(s)
-            core = core / l
 
-        ret += torch.sum(core) / 2
-        
-        return ret
 
 class VGG(nn.Module):
 
