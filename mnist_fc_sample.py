@@ -1,8 +1,9 @@
 """
-Created on Sun Aug 25 15:53:10 2019
+Created on Mon Aug 26 10:38:34 2019
 
 @author: zkq
 """
+
 
 
 
@@ -20,11 +21,11 @@ from tqdm import tqdm
 
 
 class Net(nn.Module):
-    def __init__(self, rank=[(20, 20, 20), (40,)]):
+    def __init__(self):
         super(Net, self).__init__()
     
-        self.fc1 = TTlinear((4,7,4,7), (4, 5, 5, 5), rank[0], beta=2)
-        self.fc2 = TTlinear((20, 25), (2, 5), rank[1], beta=5)
+        self.fc1 = nn.Linear(28*28, 500)
+        self.fc2 = nn.Linear(500, 10)
 
     def forward(self, x):
         x = x.view(x.size(0), -1)
@@ -32,13 +33,6 @@ class Net(nn.Module):
         x = self.fc2(x)
         return x
     
-    def regularizer(self):
-        ret = 0
-        for m in self.modules():
-            if isinstance(m, TTlinear):
-                ret += m.regularizer()
-                
-        return ret
 
 def test(model, test_loader):
     model.eval()
@@ -69,14 +63,8 @@ if __name__ == '__main__':
                         help='number of sampels to get (default: 500)')
     parser.add_argument('--samples_discarded', type=int, default=50, metavar='N',
                         help='number of sampels to discard (default: 50)')
-    parser.add_argument('--lamb_ths', default=0.1,
-                        help='threshold to reduce rank (default: 0.1)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
-                        help='disables CUDA training')
-    
-#    parser.add_argument('--seed', type=int, default=1, metavar='S',
-#                        help='random seed (default: 1)')
-    
+                        help='disables CUDA training')  
     parser.add_argument('--save-result', action='store_true', default=True,
                         help='For Saving the current result')
     
@@ -103,53 +91,21 @@ if __name__ == '__main__':
         batch_size=args.test_batch_size, shuffle=False, **kwargs)
     criterian = nn.CrossEntropyLoss()
 
-    model_o = Net().to(device)
-    state_dict = torch.load("../models/fashion_mnist_fc_tt.pth")
-    model_o.load_state_dict(state_dict)
-    test(model_o, test_loader)
-    
-    # reduce rank
-    rank = []
-    for layer in ['fc1', 'fc2']:
-        ths = getattr(model_o, layer).get_lamb_ths()
-        rank_i = []
-        for i in range(len(ths)):
-            ind = list(np.where(state_dict['{}.lamb.{}'.format(layer, i)].cpu().numpy() 
-                < ths[i] - args.lamb_ths)[0])
-            rank_i.append(len(ind))
-            state_dict['{}.lamb.{}'.format(layer, i)] = \
-                state_dict['{}.lamb.{}'.format(layer, i)][ind]
-            state_dict['{}.factors.{}'.format(layer, i)] = \
-                state_dict['{}.factors.{}'.format(layer, i)][:,:,:,ind]
-            state_dict['{}.factors.{}'.format(layer, i+1)] = \
-                state_dict['{}.factors.{}'.format(layer, i+1)][ind,:,:,:]
-        rank.append(rank_i)
-    print('rank={}'.format(rank), flush=True)
-    
-    model = Net(rank).to(device)
+    model = Net().to(device)
+    state_dict = torch.load("../models/fashion_mnist_fc.pth")
     model.load_state_dict(state_dict)
-    test(model, test_loader)        
-        
+    test(model, test_loader)
+      
     
     
     def forwardfcn(x):
-        model.eval()
+#        model.eval()
         with torch.no_grad():
             x = x.to(device)
             x = model(x)
             x = x.cpu()
-        model.train()
+#        model.train()
         return x
-    
-    
-#    pbar = tqdm(total=args.num_samples)
-    
-#    def pbar_update(correct):
-#        total = len(test_loader.dataset)
-#        pbar.set_postfix_str('Test set: Accuracy: {}/{} ({:.0f}%)'.format(
-#                    correct, total,
-#                    100. * correct / total), refresh=False)
-#        pbar.update()
     
     modelsaver = modelsaver_test(forwardfcn, test_loader)
     
@@ -166,7 +122,6 @@ if __name__ == '__main__':
             sampler.zero_grad()
             output = model(data)
             loss = criterian(output, target) * len(train_loader.dataset)
-            loss += model.regularizer() 
             loss.backward()
             sampler.step()
 #        test(model, test_loader) 
@@ -191,6 +146,6 @@ if __name__ == '__main__':
     
 
     if (args.save_result):
-        torch.save(sampler.samples,"../models/fashion_mnist_fc_tt_samples.pth")
+        torch.save(sampler.samples,"../models/fashion_mnist_fc_samples.pth")
         
 

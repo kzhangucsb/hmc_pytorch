@@ -23,7 +23,7 @@ batchsize = 40
 batchsize_test = 5000
 nepoch = 5000
 
-nl = '1em2'
+nl = 'invivo2'
 svd_init = False
 fix_tau = False
 
@@ -32,7 +32,7 @@ with open('../data/ktensor_noise_{}.pickle'.format(nl), 'rb') as f:
     p = pickle.load(f)
     
 size = p['size']
-rank = 15
+rank = 80
 train_input = torch.LongTensor(p['train']['indexes']).t()
 train_value = torch.Tensor(p['train']['values'])
 #train_norm = torch.norm(train_value).item()
@@ -40,7 +40,7 @@ test_input = torch.LongTensor(p['test']['indexes']).t()
 test_value = torch.Tensor(p['test']['values'])
 #test_norm = torch.norm(test_value).item()
 
-model = cp(size, rank, beta=1, d=1e4)#, beta = 1, c = 1)#5, 1e4) # beta=0.2, c=10)
+model = cp(size, rank, beta=0.9, d=1e4)#1, beta = 1, c = 1)#5, 1e4) # beta=0.2, c=10)
 
 
 if svd_init:

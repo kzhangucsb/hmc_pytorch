@@ -82,7 +82,7 @@ class bfcp(Module):
         ret = 0
         for f in self.factors:
             ret += torch.sum(torch.sum(f**2, dim=0) * torch.exp(self.lamb))
-        ret += torch.sum(self.lamb)*sum(self.size)/ 2
+        ret -= sum(self.size) * torch.sum(self.lamb) / 2
         
 
         ret -= self.alpha * torch.sum(self.lamb)
@@ -112,7 +112,7 @@ def regulized_loss(loss, model, len_dataset):
     loss_n = loss * (len_dataset * torch.exp(model.tau)/2)
     loss_n -= 0.5 * len_dataset * model.tau
         
-    loss_n += model.prior_theta() #/ 1e2  #/ len(data)
+    loss_n += model.prior_theta_exp() #/ 1e2  #/ len(data)
     loss_n += model.prior_tau_exp() #/ 1e2 # 1e-2
     return loss_n
         

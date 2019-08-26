@@ -18,7 +18,7 @@ tl.set_backend('pytorch')
 
 class VGG(nn.Module):
 
-    def __init__(self, features, tensorized, num_classes=10, init_weights=True):
+    def __init__(self, features, tensorized, num_classes=10, init_weights=True, beta=1):
         super(VGG, self).__init__()
         self.features = features
         self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
@@ -27,15 +27,15 @@ class VGG(nn.Module):
         if tensorized[0] is None:
             l1 = nn.Linear(512 * 7 * 7, 4096)
         else:
-            l1 = tensorizedlinear((32, 16, 49), (64, 64), tensorized[0][0], tensorized[0][1])
+            l1 = tensorizedlinear((32, 16, 49), (64, 64), tensorized[0][0], tensorized[0][1], beta=beta)
         if tensorized[1] is None:
             l2 = nn.Linear(4096, 4096)
         else:
-            l2 = tensorizedlinear((64, 64), (64, 64), tensorized[1][0], tensorized[1][1])
+            l2 = tensorizedlinear((64, 64), (64, 64), tensorized[1][0], tensorized[1][1], beta=beta)
         if tensorized[2] is None:
             l3 = nn.Linear(4096, num_classes)
         else:
-            l3 = tensorizedlinear((64, 64), (num_classes,), tensorized[2][0], tensorized[2][1])
+            l3 = tensorizedlinear((64, 64), (num_classes,), tensorized[2][0], tensorized[2][1], beta=beta)
             
         
         self.classifier = nn.Sequential(
@@ -81,7 +81,7 @@ class VGG(nn.Module):
         return ret
                 
 
-def make_layers(cfg, tensorized, batch_norm=False):
+def make_layers(cfg, tensorized, batch_norm=False, beta=2):
     layers = []
     in_channels = 3
     for i, v in enumerate(cfg):
@@ -90,7 +90,8 @@ def make_layers(cfg, tensorized, batch_norm=False):
         else:
             if tensorized is not None and tensorized[i] is not None:
                 (in_rank, out_rank) = tensorized[i]
-                conv2d = tensorizedConv2d(in_channels, v, in_rank, out_rank, kernel_size=3, padding=1)
+                conv2d = tensorizedConv2d(in_channels, v, in_rank, out_rank, 
+                                          kernel_size=3, padding=1, beta=beta)
             else:
                 conv2d = nn.Conv2d(in_channels, v, kernel_size=3, padding=1)
             if batch_norm:

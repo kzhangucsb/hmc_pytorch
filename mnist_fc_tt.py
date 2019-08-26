@@ -14,7 +14,7 @@ from torchvision import datasets, transforms
 from tqdm import tqdm
 from tensor_layer import TTlinear
 
-    class Net(nn.Module):
+class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
     

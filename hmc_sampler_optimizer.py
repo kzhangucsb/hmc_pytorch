@@ -95,8 +95,8 @@ class modelsaver_test():
         self.post_handler = post_handler
         
     def stdprint(self, correct):
-         print('\nTest set: Accuracy: {}/{} ({:.0f}%)'.format(
-                    correct, len(self.test_loader.dataset),
+         print('Sample {}: Accuracy: {}/{} ({:.0f}%)'.format(
+                    len(self.samples), correct, len(self.test_loader.dataset),
                     100. * correct / len(self.test_loader.dataset)), flush=True)
         
     
@@ -136,6 +136,7 @@ class hmcsampler(Optimizer):
                 defaults[key] = value
             else:
                 raise TypeError('Unexpected key {}'.format(key))
+        # remove parameters without grad        
         super(hmcsampler, self).__init__(params, defaults)
         
         
@@ -149,9 +150,11 @@ class hmcsampler(Optimizer):
         self.sampler = sampler
         self.samples = sampler.samples
         for group in self.param_groups:
+            group['params'] = [p for p in group['params'] if p.requires_grad]
             group['velocity'] = []
             for p in group['params']:
                 group['velocity'].append(p.clone().detach())
+
         self._reset_v()
         self.step_eclipsed = 0
         self._step_size = 0
