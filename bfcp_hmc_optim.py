@@ -22,7 +22,7 @@ from bfcp import bfcp as cp, regulized_loss
 from tqdm import tqdm
 
 #nl = '1em2'
-nl = '3em2'
+nl = '1em3'
 
 device = torch.device('cpu')
 args = {'num_workers': 1, 'pin_memory': True}
@@ -46,7 +46,6 @@ test_value = torch.Tensor(p['test']['values'])
 T = 1#e-2
 batchsize = 40
 
-rank = 15
 
 train_loader = DataLoader(TensorDataset(train_input, train_value),
         batch_size = batchsize, shuffle=True, **args)
@@ -58,7 +57,7 @@ criterion = nn.MSELoss()
 with open('../models/cp_bayes_model_{}.pth'.format(nl), 'rb') as f:
     state_dict = torch.load(f)
     
-ths = 0.05
+ths = 0.2
 ind = np.where(state_dict['lamb'].cpu().numpy() > ths)[0]
 rank = len(ind)
 state_dict['lamb'] = state_dict['lamb'][ind]
@@ -72,12 +71,12 @@ model.load_state_dict(state_dict)
     
 
     
-sampler = hmcsampler([{'params':model.factors, 'max_length': 0.002}, # 'max_length': 1e-2
+sampler = hmcsampler([{'params':model.factors, 'max_length': 0.001}, # 'max_length': 1e-2
                     {'params':model.lamb, 'mass': 1e2, 'max_length': 0.01},#'mass': 1e2, 'max_length': 1e-2
                     {'params':model.tau, 'mass': 1}], #'mass': 1e2
     frac_adj= 1, max_step_size=0.01)
 
-while (len(sampler.samples) <1000):
+while (len(sampler.samples) <500):
     loss_train = 0
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
@@ -148,9 +147,9 @@ while (len(sampler.samples) <1000):
 #    
 results = [] 
 tau = []
-pbar = tqdm(total=200)
-for i in range(800, 1000):
-    sampler.load_sample_index(i)
+pbar = tqdm(total=450)
+for i in range(50, 500):
+    sampler.load_sample(i)
     results.append(model.full().detach().cpu().numpy())
     tau.append(model.tau.detach().cpu().numpy())
     pbar.update(1)
@@ -160,18 +159,33 @@ tau = np.array(tau)
 mean = np.mean(results_array, axis=0)
 var = np.mean((results-mean)**2, axis=0)**0.5
 
-
-points_per_sample = 1
-samples = []
+#
+#points_per_sample = 1
+#var2 = np.zeros_like(mean)
+#for r, t in zip(results, tau):
+#    for i in range(points_per_sample):
+#        sample = (r + np.sqrt(T / np.exp(t)) * np.random.normal(size=r.shape))
+#        var2 += (sample-mean)**2
+#
+#var2 /= len(results) / points_per_sample        
+var2 = np.zeros_like(mean)
 for r, t in zip(results, tau):
-    for i in range(points_per_sample):
-        samples.append(r + np.sqrt(T / np.exp(t) / 2) * np.random.normal(size=r.shape))
+    var2 += (r-mean)**2 + (T / np.exp(t))
         
-samples = np.array(samples)
-var2 = np.mean((samples-mean)**2, axis=0)**0.5
+
+var2 /= len(results) 
+        
+#samples = np.array(samples)
+#var2 = np.mean((samples-mean)**2, axis=0)**0.5
+var2 = var2 ** 0.5
 
 err = mean - p['full']
 err_n = np.mean(err**2)**0.5
 var_n = np.mean(var**2)**0.5
 var2n = np.mean(var2**2)**0.5
 print('Error {} var {} var2 {}'.format(err_n, var_n, var2n))
+
+#for pos in [0, 10, 20, 30, 40]:
+#    plt.imsave('../img/{}_{}_mean.png'.format(nl, pos), mean[:,:,pos])
+#    plt.imsave('../img/{}_{}_var.png'.format(nl, pos), var2[:,:,pos])
+#    plt.imsave('../img/{}_{}_truth.png'.format(nl, pos), p['full'][:,:,pos])

@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import tensorly as tl
 from torch.nn import Parameter, ParameterList
+#from torch.nn.modules.utils import _pair
 import numpy as np
 
 tl.set_backend('pytorch')
@@ -135,7 +136,7 @@ class tensorizedlinear(nn.Module):
                 ret -= torch.sum(self.alpha * l)
                 ret += torch.sum(torch.exp(l)) / self.beta
             for l, f, s in zip(self.lamb_out, self.factors_out, self.out_size):
-                ret += torch.sum(torch.sum(f**2, dim=1) * torch.exp(l) / 2)
+                ret += torch.sum(torch.sum(f**2, dim=0) * torch.exp(l) / 2)
                 ret -= s * torch.sum(l) / 2
                 ret -= torch.sum(self.alpha * l)
                 ret += torch.sum(torch.exp(l)) / self.beta
@@ -173,6 +174,21 @@ class tensorizedlinear(nn.Module):
                 core2 = core2 / l
             ret += torch.sum(core2) / 2
         return ret
+    
+    def get_lamb_ths(self, exp=True):
+        if exp:
+            ths_in = [np.log((s / 2 + self.alpha.item()) * self.beta.item()) 
+                for s in self.in_size]
+            ths_out = [np.log((s / 2 + self.alpha.item()) * self.beta.item()) 
+                for s in self.out_size]
+        else:
+            ths_in = [self.beta.item() / (s / 2 + self.alpha.item() + 1) 
+                for s in self.in_size]
+            ths_out = [self.beta.item() / (s / 2 + self.alpha.item() + 1) 
+                for s in self.out_size]
+        return (ths_in, ths_out)
+  
+    
     
 class TTlinear(nn.Module):
     def __init__(self, in_size, out_size, rank,  alpha = 1, beta = 0.1, **kwargs):
@@ -257,7 +273,7 @@ class TTlinear(nn.Module):
                 
                 ret += torch.sum(self.beta / self.lamb[i])
                 ret += (self.alpha + 1) * torch.sum(torch.log(self.lamb[i]))
-                
+            
         return ret
     def get_lamb_ths(self, exp=True):
         if (exp):
@@ -270,4 +286,147 @@ class TTlinear(nn.Module):
             lamb_ths = [self.beta.item() / (np.prod(self.factors[i].shape[:-1]) / 2
                            + np.prod(self.factors[i+1].shape[1:]) / 2 
                            + self.alpha.item() + 1) for i in range(len(self.lamb))]
+        return lamb_ths
+    
+    
+class TTConv2d(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, rank, 
+                 stride=1, padding=0, dilation=1,
+                 alpha = 1, beta = 0.1, **kwargs):
+        # increase beta to decrease rank
+        super(TTConv2d, self).__init__()
+        assert(len(in_channels) == len(in_channels))
+        assert(len(rank) == len(in_channels) - 1)
+        self.in_channels = list(in_channels)
+        self.out_channels = list(out_channels)
+        self.rank = list(rank)
+        self.factors = ParameterList()
+        
+        r1 = [1] + self.rank[:-1]
+        r2 = self.rank
+        for ri, ro, si, so in zip(r1, r2, in_channels[:-1], out_channels[:-1]):
+            p = Parameter(torch.Tensor(ri, si, so, ro))
+            self.factors.append(p)
+        self.bias = Parameter(torch.Tensor(np.prod(out_channels)))
+        
+        self.conv = nn.Conv2d(
+                in_channels=self.rank[-1] * in_channels[-1],
+                out_channels=out_channels[-1],
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+                dilation=dilation,
+                bias=False)
+                
+                        
+        
+        self.lamb = ParameterList([Parameter(torch.ones(r)) for r in rank])
+        self.alpha = Parameter(torch.tensor(alpha), requires_grad=False)
+        self.beta = Parameter(torch.tensor(beta), requires_grad=False)
+        
+        
+        
+        self._initialize_weights()
+        
+    def forward(self, x):
+        def mode2_dot(tensor, matrix, mode):
+            ms = matrix.shape
+            matrix = matrix.reshape(ms[0]*ms[1], ms[2]*ms[3])
+            
+            sp = list(tensor.shape)
+            sp[mode:mode+2] = [sp[mode]*sp[mode+1], 1]
+            
+            sn = list(tensor.shape)
+            sn[mode:mode+2] = ms[2:4]
+            
+            tensor = tensor.reshape(sp)
+            tensor = tl.tenalg.mode_dot(tensor, matrix.t(), mode)
+            return tensor.reshape(sn)
+
+            
+            
+        (b, c, h, w) = x.shape
+        x = x.reshape((x.shape[0], 1, *self.in_channels, h, w))
+        for (i, f) in enumerate(self.factors):
+            x = mode2_dot(x, f, i+1)
+        x = x.reshape((b * np.prod(self.out_channels[:-1]), 
+                       self.rank[-1] * self.in_channels[-1], h, w))
+        x = self.conv(x)
+        x = x.reshape((b, np.prod(self.out_channels), h, w))
+        x = x + self.bias.reshape((1, -1, 1, 1))
+        return x
+    
+    def _initialize_weights(self):
+        for f in self.factors:
+            nn.init.kaiming_uniform_(f)
+        nn.init.constant_(self.bias, 0)
+        
+    def regularizer(self, exp=True):
+        ret = 0
+        if exp:
+            for i in range(len(self.rank)):
+                ret += torch.sum(torch.sum(self.factors[i]**2, dim=[0, 1, 2]) 
+                    * torch.exp(self.lamb[i]) / 2)
+                ret -= np.prod(self.factors[i].shape[:-1]) \
+                    * torch.sum(self.lamb[i]) / 2
+                if i != len(self.rank) -1:
+                    ret += torch.sum(torch.sum(self.factors[i+1]**2, dim=[1, 2, 3]) 
+                        * torch.exp(self.lamb[i] / 2))
+                    ret -= np.prod(self.factors[i+1].shape[1:]) \
+                        * torch.sum(self.lamb[i]) / 2
+                else:
+                    w = self.conv.weight.transpose(0, 1)
+                    w = w.reshape(self.rank[i], -1)
+                    ret += torch.sum(torch.sum(w**2, dim=1) 
+                        * torch.exp(self.lamb[i]) / 2)
+                    ret -= w.shape[1] * torch.sum(self.lamb[i]) / 2
+            
+                
+                ret -= torch.sum(self.alpha * self.lamb[i])
+                ret += torch.sum(torch.exp(self.lamb[i])) / self.beta
+                
+                
+        else:
+            for i in range(len(self.rank)-1):
+                self.lamb[i].data.clamp_min_(1e-6)
+                ret += torch.sum(torch.sum(self.factors[i]**2, dim=[0, 1, 2]) 
+                    / self.lamb[i] / 2)
+                ret += np.prod(self.factors[i].shape[:-1]) \
+                    * torch.sum(torch.log(self.lamb[i])) / 2
+                if i != len(self.rank) -1:
+                    ret += torch.sum(torch.sum(self.factors[i+1]**2, dim=[1, 2, 3]) 
+                        /self.lamb[i] / 2)
+                    ret += np.prod(self.factors[i+1].shape[1:]) \
+                        * torch.sum(torch.log(self.lamb[i])) / 2
+                else:
+                    w = self.conv.weight.transpose(0, 1)
+                    w = w.reshape(self.rank[i], -1)
+                    ret += torch.sum(torch.sum(w**2, dim=1) /self.lamb[i] / 2)
+                    ret += w.shape[1] * torch.sum(torch.log(self.lamb[i])) / 2
+                    
+                ret += torch.sum(self.beta / self.lamb[i])
+                ret += (self.alpha + 1) * torch.sum(torch.log(self.lamb[i]))
+                
+        return ret
+    def get_lamb_ths(self, exp=True):
+        if (exp):
+            lamb_ths = [
+                np.log((np.prod(self.factors[i].shape[:-1]) / 2
+                           + np.prod(self.factors[i+1].shape[1:]) / 2 
+                           + self.alpha.item()) 
+                        * self.beta.item()) for i in range(len(self.lamb)-1)]
+            lamb_ths.append(
+                np.log((np.prod(self.factors[-1].shape[:-1]) / 2
+                           + (self.out_channels[-1]*self.in_channels[-1]
+                               *self.conv.weight.shape[2]*self.conv.weight.shape[3]) / 2 
+                           + self.alpha.item()) 
+                        * self.beta.item()))
+        else:
+            lamb_ths = [self.beta.item() / (np.prod(self.factors[i].shape[:-1]) / 2
+                           + np.prod(self.factors[i+1].shape[1:]) / 2 
+                           + self.alpha.item() + 1) for i in range(len(self.lamb)-1)]
+            lamb_ths.append(self.beta.item() / (np.prod(self.factors[-1].shape[:-1]) / 2
+                           + (self.out_channels[-1]*self.in_channels[-1]
+                               *self.conv.weight.shape[2]*self.conv.weight.shape[3]) / 2 
+                           + self.alpha.item() + 1))
         return lamb_ths

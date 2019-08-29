@@ -20,18 +20,22 @@ import scipy.io as io
 
 
 #size = full.shape
-filename = '../data/ktensor_noise_1em3.pickle'
+nl = '1em2'
+
+nl_num = float(nl[0]) * 10 ** (-float(nl[3]))
+
+
 size = (20, 20, 20)
 
 rank = 5
-samples_train = 800
+samples_train = 1600
 samples_test = 800
 
 
 
-factors = [np.random.rand(s, rank) for s in size]
+factors = [np.random.randn(s, rank) for s in size]
 full_nn = tl.kruskal_to_tensor((np.ones(rank), factors) )
-full    = full_nn + np.random.randn(*size) * 1e-3
+full    = full_nn + np.random.randn(*size) * nl_num
 
 subs = np.random.choice(np.prod(size), samples_train+samples_test, False)
 ind_train = np.unravel_index(subs[:samples_train], size)
@@ -41,8 +45,12 @@ values_train = full[ind_train]
 #values_train += np.random.randn(*values_train.shape)*1e-1
 values_test  = full[ind_test]
 
-with open(filename, 'wb') as f:
-    pickle.dump({'size': size, 'rank': rank,
+p = {'size': size, 'rank': rank,
                  'factors': factors, 'full': full, 'full_nn': full_nn,
                  'train': {'indexes': ind_train, 'values': values_train}, 
-                 'test': {'indexes': ind_test, 'values': values_test}}, f)
+                 'test': {'indexes': ind_test, 'values': values_test}}
+
+with open('../data/ktensor_noise_normal_{}.pickle'.format(nl), 'wb') as f:
+    pickle.dump(p, f)
+    
+io.savemat('../data/ktensor_noise_normal_{}.mat'.format(nl), p)

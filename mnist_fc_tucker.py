@@ -1,8 +1,11 @@
 """
-Created on Sat Aug 24 16:04:36 2019
+Created on Mon Aug 26 22:33:25 2019
 
 @author: zkq
 """
+
+
+
 
 
 from __future__ import print_function
@@ -13,14 +16,21 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 from tqdm import tqdm
-from tensor_layer import TTlinear
+from tensor_layer import tensorizedlinear, TTlinear
+
+
+
 
 class Net(nn.Module):
-    def __init__(self):
+    def __init__(self, rank=[[(25, 25),(20, 20)], [(20, 20), (10,)]]):
         super(Net, self).__init__()
     
-        self.fc1 = TTlinear((4,7,4,7), (4, 5, 5, 5), (20, 20, 20), beta=2)
-        self.fc2 = TTlinear((20, 25), (2, 5), (20,), beta=5)
+        self.fc1 = tensorizedlinear((28, 28), (20, 25), *rank[0], beta=20)
+        self.fc2 = tensorizedlinear((20, 25), (10, ), *rank[1], beta=20)
+        for l in self.fc1.lamb_in:
+            nn.init.constant_(l, 5)
+        for l in self.fc1.lamb_out:
+            nn.init.constant_(l, 5)
 
     def forward(self, x):
         x = x.view(x.size(0), -1)
@@ -31,7 +41,7 @@ class Net(nn.Module):
     def regularizer(self):
         ret = 0
         for m in self.modules():
-            if isinstance(m, TTlinear):
+            if isinstance(m, TTlinear) or isinstance(m, tensorizedlinear):
                 ret += m.regularizer()
                 
         return ret
@@ -55,9 +65,8 @@ if __name__ == '__main__':
 #                        help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--no-bf', action='store_true', default=True,
-                        help='Don\'t Use Bayesian model')
-    parser.add_argument('--no-save-model', action='store_true', default=False,
+    
+    parser.add_argument('--save-model', action='store_true', default=True,
                         help='For Saving the current Model')
     
     args = parser.parse_args()
@@ -97,8 +106,7 @@ if __name__ == '__main__':
             optimizer.zero_grad()
             output = model(data)
             loss = criterian(output, target)
-            if not args.no_bf:
-                loss += model.regularizer() / len(train_loader.dataset)
+            loss += model.regularizer() / len(train_loader.dataset)
             loss.backward()
             optimizer.step()
             pbar.set_postfix_str('loss: {:0.4f}'.format(loss.item()), refresh=False)
@@ -122,10 +130,7 @@ if __name__ == '__main__':
             test_loss, correct, len(test_loader.dataset),
             100. * correct / len(test_loader.dataset)), flush=True)
 
-    if not (args.no_save_model):
-        if args.no_bf:
-            torch.save(model.state_dict(),"../models/fashion_mnist_fc_tt_nobf.pth")
-        else:
-            torch.save(model.state_dict(),"../models/fashion_mnist_fc_tt.pth")
+    if (args.save_model):
+        torch.save(model.state_dict(),"../models/fashion_mnist_fc_tucker.pth")
         
 

@@ -112,7 +112,7 @@ def regulized_loss(loss, model, len_dataset):
     loss_n = loss * (len_dataset * torch.exp(model.tau)/2)
     loss_n -= 0.5 * len_dataset * model.tau
         
-    loss_n += model.prior_theta_exp() #/ 1e2  #/ len(data)
+    loss_n += model.prior_theta() #/ 1e2  #/ len(data)
     loss_n += model.prior_tau_exp() #/ 1e2 # 1e-2
     return loss_n
         

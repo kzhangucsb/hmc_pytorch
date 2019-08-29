@@ -126,26 +126,44 @@ if __name__ == '__main__':
             sampler.step()
 #        test(model, test_loader) 
 #    pbar.close()
+#    p = []        
+#    for s in sampler.samples[args.samples_discarded: args.num_samples]:
+#        s_softmax = F.softmax(s, dim=1)
+#        p.append(s_softmax)
+#    p = torch.stack(p, dim=2)
+#    p = torch.mean(p, dim=2)
+#    
+#    target = sampler.sampler.target
+#    pred = torch.argmax(p, dim=1)
+#    correct = pred.eq(target).sum().item()
+#    LL = F.nll_loss(torch.log(p), target)
+#    
+    
     p = []        
     for s in sampler.samples[args.samples_discarded: args.num_samples]:
-        s_softmax = F.softmax(s, dim=1)
+        s_softmax = F.log_softmax(s, dim=1)
         p.append(s_softmax)
     p = torch.stack(p, dim=2)
-    p = torch.mean(p, dim=2)
+    p = torch.logsumexp(p, dim=2) - np.log(p.shape[2])
+    
+    target = sampler.sampler.target
     pred = torch.argmax(p, dim=1)
-    correct = pred.eq(sampler.sampler.target).sum().item()
-
+    correct = pred.eq(target).sum().item()
+    LL = F.nll_loss(p, target)
     
 
-    print('Overall prediction:  Accuracy: {}/{} ({:.0f}%)'.format(
-        correct, len(test_loader.dataset),
+    print('Overall prediction: Loss {:0.4f}, Accuracy: {}/{} ({:.0f}%)'.format(
+        LL, correct, len(test_loader.dataset),
         100. * correct / len(test_loader.dataset)), flush=True)
 
+
+    
         
 
     
 
     if (args.save_result):
-        torch.save(sampler.samples,"../models/fashion_mnist_fc_samples.pth")
+        torch.save({'target': modelsaver.target, 'samples': modelsaver.samples}, 
+                    "../models/fashion_mnist_fc_samples.pth")
         
 

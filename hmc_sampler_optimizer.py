@@ -271,7 +271,7 @@ class hmcsampler(Optimizer):
         
     def load_sample_index(self, index):
 #        self.load_sample(self.samples[index])
-        self.load_sample(self, index)
+        self.load_sample(index)
     
     def load_sample(self, sample):
         self.sampler.load(sample)

@@ -20,10 +20,10 @@ import tensorly as tl
 device = torch.device('cpu')
 args = dict()#{'num_workers': 1, 'pin_memory': True}
 batchsize = 40
-batchsize_test = 5000
+batchsize_test = 100
 nepoch = 5000
 
-nl = 'invivo2'
+nl = 'normal_3em2'
 svd_init = False
 fix_tau = False
 
@@ -32,7 +32,7 @@ with open('../data/ktensor_noise_{}.pickle'.format(nl), 'rb') as f:
     p = pickle.load(f)
     
 size = p['size']
-rank = 80
+rank = 15
 train_input = torch.LongTensor(p['train']['indexes']).t()
 train_value = torch.Tensor(p['train']['values'])
 #train_norm = torch.norm(train_value).item()
@@ -40,8 +40,10 @@ test_input = torch.LongTensor(p['test']['indexes']).t()
 test_value = torch.Tensor(p['test']['values'])
 #test_norm = torch.norm(test_value).item()
 
-model = cp(size, rank, beta=0.9, d=1e4)#1, beta = 1, c = 1)#5, 1e4) # beta=0.2, c=10)
-
+model = cp(size, rank, beta=4, d=1e4)#1, beta = 1, c = 1)#5, 1e4) # beta=0.2, c=10)
+#
+#for f in model.factors:
+#    nn.init.normal_(f)
 
 if svd_init:
     t = torch.zeros(size)
@@ -92,6 +94,7 @@ with torch.no_grad():
 
 for epoch in range(nepoch):
     loss_train = 0
+    loss_train2 = 0
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
@@ -104,14 +107,15 @@ for epoch in range(nepoch):
 #        
 #        loss += model.prior_theta() #/ 1e2  #/ len(data)
 #        loss += model.prior_tau_exp() #/ 1e2 # 1e-2
-        loss = regulized_loss(loss, model, len(train_loader.dataset))
-        
+        loss = regulized_loss(loss, model, len(train_loader.dataset)) / 10
+        loss_train2 += loss.item() 
         loss.backward()
         optimizer.step()
         
     loss_train /= len(train_loader)
+    loss_train2 /= len(train_loader)
     loss_train = loss_train ** 0.5
-    if (epoch+1) % 500 == 0:
+    if (epoch+1) % 200 == 0:
         schedular.step()
     with torch.no_grad():
         loss_test = 0
@@ -123,14 +127,14 @@ for epoch in range(nepoch):
         loss_test = loss_test ** 0.5
     loss_log[0][epoch+1] = loss_train
     loss_log[1][epoch+1] = loss_test
-    print('Epoch {} training err {:4.4f} testing err {:4.4f} training loss {}'.format(
-            epoch, loss_train, loss_test, loss.item()))
+    print('Epoch {} training err {:4.4f} testing err {:4.4f} training loss {:0.4f}'.format(
+            epoch, loss_train, loss_test, loss_train2))
     
 plt.semilogy(np.arange(nepoch+1), loss_log[0], label='train')
 plt.semilogy(np.arange(nepoch+1), loss_log[1], label='test')
 plt.legend()
 plt.show()
-#with open('../models/cp_bayes_model_{}.pth'.format(nl), 'wb') as f:
-#    torch.save(model.state_dict(), f)
+with open('../models/cp_bayes_model_{}.pth'.format(nl), 'wb') as f:
+    torch.save(model.state_dict(), f)
 
 #with open('cp_bayes_model_invivo.pth'.format(nl), 'wb') as f:
