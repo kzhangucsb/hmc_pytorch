@@ -40,7 +40,7 @@ if __name__ == '__main__':
                         help='disables CUDA training')
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--no-bf', action='store_true', default=True,
+    parser.add_argument('--no-bf', action='store_true', default=False,
                         help='Don\'t Use Bayesian model')
     parser.add_argument('--save-model', action='store_true', default=True,
                         help='For Saving the current Model')

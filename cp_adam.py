@@ -23,7 +23,7 @@ batchsize = 40
 batchsize_test = 100
 nepoch = 5000
 
-nl = 'normal_3em2'
+nl = 'pincat'
 svd_init = False
 fix_tau = False
 
@@ -32,7 +32,7 @@ with open('../data/ktensor_noise_{}.pickle'.format(nl), 'rb') as f:
     p = pickle.load(f)
     
 size = p['size']
-rank = 15
+rank = 80
 train_input = torch.LongTensor(p['train']['indexes']).t()
 train_value = torch.Tensor(p['train']['values'])
 #train_norm = torch.norm(train_value).item()
@@ -40,10 +40,9 @@ test_input = torch.LongTensor(p['test']['indexes']).t()
 test_value = torch.Tensor(p['test']['values'])
 #test_norm = torch.norm(test_value).item()
 
-model = cp(size, rank, beta=4, d=1e4)#1, beta = 1, c = 1)#5, 1e4) # beta=0.2, c=10)
-#
-#for f in model.factors:
-#    nn.init.normal_(f)
+model = cp(size, rank, beta=0.2, d=1e4)#1, beta = 1, c = 1)#5, 1e4) # beta=0.2, c=10)
+
+
 
 if svd_init:
     t = torch.zeros(size)
@@ -55,9 +54,9 @@ if svd_init:
         model.factors[r].data = u[:,:rank] * (s[:rank] ** 0.5)
     print("factors initialized")
         
-if fix_tau:
-    model.tau.data = torch.tensor(2.6)
-    model.tau.requires_grad = False
+#if fix_tau:
+#    model.tau.data = torch.tensor(2.6)
+#    model.tau.requires_grad = False
     
 model.to(device)    
 

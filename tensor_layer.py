@@ -88,12 +88,12 @@ class tensorizedConv2d(nn.Module):
 
         
 class tensorizedlinear(nn.Module):
-    def __init__(self, in_size, out_size, in_rank, out_rank,  alpha = 1, beta = 0.1, **kwargs):
+    def __init__(self, in_size, out_size, in_rank, out_rank,  alpha = 1, beta = 0.1, c=1e-3, **kwargs):
         super(tensorizedlinear, self).__init__()
-        self.in_size = in_size
-        self.out_size = out_size
-        self.in_rank = in_rank
-        self.out_rank = out_rank
+        self.in_size = list(in_size)
+        self.out_size = list(out_size)
+        self.in_rank = list(in_rank)
+        self.out_rank = list(out_rank)
         self.factors_in  = ParameterList([Parameter(torch.Tensor(r, s)) for (r, s) in zip(in_rank, in_size)])
         self.factors_out = ParameterList([Parameter(torch.Tensor(s, r)) for (r, s) in zip(out_rank, out_size)])
         self.core = Parameter(torch.Tensor(np.prod(out_rank), np.prod(in_rank)))
@@ -102,6 +102,7 @@ class tensorizedlinear(nn.Module):
         self.lamb_out = ParameterList([Parameter(torch.ones(r)) for r in out_rank])
         self.alpha = Parameter(torch.tensor(alpha), requires_grad=False)
         self.beta = Parameter(torch.tensor(beta), requires_grad=False)
+        self.c = Parameter(torch.tensor(c), requires_grad=False)
         self._initialize_weights()
         
     def forward(self, x):
@@ -140,7 +141,7 @@ class tensorizedlinear(nn.Module):
                 ret -= s * torch.sum(l) / 2
                 ret -= torch.sum(self.alpha * l)
                 ret += torch.sum(torch.exp(l)) / self.beta
-    #        ret += torch.sum(self.core ** 2 / 2) 
+            ret += torch.sum(self.core ** 2 / 2) 
             core_shape = list(self.out_rank) + list(self.in_rank)
             core = self.core.reshape(core_shape)
             core2 = core ** 2
@@ -149,7 +150,9 @@ class tensorizedlinear(nn.Module):
                 s[d] = -1
                 l = l.reshape(s)
                 core2 = core2 * torch.exp(l)
-            ret += torch.sum(core2) / 2
+                ret -= core2.numel() / l.numel() * torch.sum(l) / 2
+#            core2 = self.core ** 2
+            ret += torch.sum(core2) * self.c / 2
         else:
             for l, f, s in zip(self.lamb_in, self.factors_in, self.in_size):
                 l.data.clamp_min_(1e-6)
@@ -175,12 +178,17 @@ class tensorizedlinear(nn.Module):
             ret += torch.sum(core2) / 2
         return ret
     
+    
     def get_lamb_ths(self, exp=True):
         if exp:
-            ths_in = [np.log((s / 2 + self.alpha.item()) * self.beta.item()) 
-                for s in self.in_size]
-            ths_out = [np.log((s / 2 + self.alpha.item()) * self.beta.item()) 
-                for s in self.out_size]
+            ths_in = [np.log((
+                    (s + self.core.numel() / self.in_rank[ind])/2 
+                    + self.alpha.item()) * self.beta.item()) 
+                for (ind, s) in enumerate(self.in_size)]
+            ths_out = [np.log((
+                    (s + self.core.numel() / self.out_rank[ind])/2 
+                    + self.alpha.item()) * self.beta.item()) 
+                for (ind, s) in enumerate(self.out_size)]
         else:
             ths_in = [self.beta.item() / (s / 2 + self.alpha.item() + 1) 
                 for s in self.in_size]
@@ -248,17 +256,27 @@ class TTlinear(nn.Module):
         ret = 0
         if exp:
             for i in range(len(self.rank)):
-                ret += torch.sum(torch.sum(self.factors[i]**2, dim=[0, 1, 2]) 
-                    * torch.exp(self.lamb[i]) / 2)
+                # ret += torch.sum(torch.sum(self.factors[i]**2, dim=[0, 1, 2]) 
+                    # * torch.exp(self.lamb[i]) / 2)
                 ret -= np.prod(self.factors[i].shape[:-1]) \
                     * torch.sum(self.lamb[i]) / 2
-                ret += torch.sum(torch.sum(self.factors[i+1]**2, dim=[1, 2, 3]) 
-                    * torch.exp(self.lamb[i] / 2))
+                # ret += torch.sum(torch.sum(self.factors[i+1]**2, dim=[1, 2, 3]) 
+                    # * torch.exp(self.lamb[i] / 2))
                 ret -= np.prod(self.factors[i+1].shape[1:]) \
-                    * torch.sum(self.lamb[i]) / 2
-                
+                     * torch.sum(self.lamb[i]) / 2
                 ret -= torch.sum(self.alpha * self.lamb[i])
                 ret += torch.sum(torch.exp(self.lamb[i])) / self.beta
+
+            for i in range(len(self.rank)+1):
+                m = torch.sum(self.factors[i]**2, dim=[1, 2])
+                if i > 0:
+                    m = m * torch.exp(self.lamb[i-1]).reshape([-1, 1])  
+                if i < len(self.rank):
+                    m = m * torch.exp(self.lamb[i]).reshape([1, -1]) 
+                ret += torch.sum(m, dim=[0, 1]) / 2
+               
+                
+                
         else:
             for i in range(len(self.rank)):
                 self.lamb[i].data.clamp_min_(1e-6)
@@ -365,13 +383,19 @@ class TTConv2d(nn.Module):
         ret = 0
         if exp:
             for i in range(len(self.rank)):
-                ret += torch.sum(torch.sum(self.factors[i]**2, dim=[0, 1, 2]) 
-                    * torch.exp(self.lamb[i]) / 2)
+                # ret += torch.sum(torch.sum(self.factors[i]**2, dim=[0, 1, 2]) 
+                #     * torch.exp(self.lamb[i]) / 2)
+                m = torch.sum(self.factors[i]**2, dim=[1, 2])
+                if i > 0:
+                    m = m * torch.exp(self.lamb[i-1]).reshape([-1, 1]) \
+                        / np.exp(self.get_lamb_ths(exp)[i-1])
+                m = m * torch.exp(self.lamb[i]).reshape([1, -1]) 
+                ret += torch.sum(m, dim=[0, 1]) / 2
                 ret -= np.prod(self.factors[i].shape[:-1]) \
                     * torch.sum(self.lamb[i]) / 2
                 if i != len(self.rank) -1:
-                    ret += torch.sum(torch.sum(self.factors[i+1]**2, dim=[1, 2, 3]) 
-                        * torch.exp(self.lamb[i] / 2))
+                    # ret += torch.sum(torch.sum(self.factors[i+1]**2, dim=[1, 2, 3]) 
+                    #     * torch.exp(self.lamb[i] / 2))
                     ret -= np.prod(self.factors[i+1].shape[1:]) \
                         * torch.sum(self.lamb[i]) / 2
                 else:

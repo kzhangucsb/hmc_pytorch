@@ -118,7 +118,7 @@ class vggBC(nn.Module):
         
 class vggBC_TT(nn.Module):
     
-    def __init__(self, rank=[[16, 32, 16], [16, 32, 16], [16, 32, 16], [64, 64], [16]]):
+    def __init__(self, rank=[[16, 32, 16], [16, 32, 16], [16, 32, 16], [64, 64], [32]]):
         super(vggBC_TT, self).__init__()
         assert(len(rank) == 5)
         beta_conv = 5
@@ -136,7 +136,7 @@ class vggBC_TT(nn.Module):
         self.bn3    = nn.BatchNorm1d(256*8*8)
         self.bn4    = nn.BatchNorm1d(512)
         
-        self.fc0 = TTlinear((16, 16, 64), (4, 8, 16), rank[3], beta=1)
+        self.fc0 = TTlinear((16, 16, 64), (4, 8, 16), rank[3], beta=0.1)
         self.fc1 = TTlinear((32, 16), (5, 2), rank[4], beta=1)
         
 #        self.dropout0 = nn.Dropout()

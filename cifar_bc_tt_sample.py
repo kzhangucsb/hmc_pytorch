@@ -51,7 +51,7 @@ if __name__ == '__main__':
                         help='number of sampels to discard (default: 50)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='disables CUDA training')
-    parser.add_argument('--no-bf', action='store_true', default=True,
+    parser.add_argument('--no-bf', action='store_true', default=False,
                         help='Don\'t Use Bayesian model')
 #    parser.add_argument('--seed', type=int, default=1, metavar='S',
 #                        help='random seed (default: 1)')
@@ -102,7 +102,7 @@ if __name__ == '__main__':
     
         rank = []
         for (layer, ths_o) in zip(['conv1', 'conv2', 'conv3', 'fc0', 'fc1'],
-                                  [   0.03,    0.03,    0.03,  0.01,  0.25]):
+                                  [   0.03,    0.03,    0.03,  0.015,  0.25]):
             ths = getattr(model_o, layer).get_lamb_ths()
             rank_i = []
             for i in range(len(ths)):
@@ -172,7 +172,7 @@ if __name__ == '__main__':
 #        if (epoch + 1) % 20 == 0:
 #            scheduler.step()
     
-        p = []        
+    p = []        
     for s in sampler.samples[args.samples_discarded: args.num_samples]:
         s_softmax = F.log_softmax(s, dim=1)
         p.append(s_softmax)

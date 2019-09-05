@@ -22,7 +22,7 @@ from bfcp import bfcp as cp, regulized_loss
 from tqdm import tqdm
 
 #nl = '1em2'
-nl = '1em3'
+nl = 'pincat'
 
 device = torch.device('cpu')
 args = {'num_workers': 1, 'pin_memory': True}
@@ -57,7 +57,7 @@ criterion = nn.MSELoss()
 with open('../models/cp_bayes_model_{}.pth'.format(nl), 'rb') as f:
     state_dict = torch.load(f)
     
-ths = 0.2
+ths = 0.05
 ind = np.where(state_dict['lamb'].cpu().numpy() > ths)[0]
 rank = len(ind)
 state_dict['lamb'] = state_dict['lamb'][ind]
@@ -76,7 +76,7 @@ sampler = hmcsampler([{'params':model.factors, 'max_length': 0.001}, # 'max_leng
                     {'params':model.tau, 'mass': 1}], #'mass': 1e2
     frac_adj= 1, max_step_size=0.01)
 
-while (len(sampler.samples) <500):
+while (len(sampler.samples) <1000):
     loss_train = 0
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
