@@ -124,7 +124,7 @@ def regulized_loss(loss, model, len_dataset):
 
 class bftucker(Module):
     def __init__(self, size, rank, alpha = 1, beta = 0.2, c = 1, d = 1e6, init='unif'):
-        super(bfcp, self).__init__()
+        super(bftucker, self).__init__()
         self.size = size
         self.rank = rank
         self.dim = len(size)
@@ -139,7 +139,7 @@ class bftucker(Module):
         self.lamb = ParameterList([Parameter(torch.Tensor(r)) for r in rank])
         self.factors = ParameterList([Parameter(torch.Tensor(s, r)) 
             for (s, r) in zip(size, rank)])
-        self.core = Parameter(torch.Tensor(rank))
+        self.core = Parameter(torch.zeros(rank))
         self.reset_parameters(init)
 
     def reset_parameters(self, initms='unif'):
@@ -153,57 +153,55 @@ class bftucker(Module):
                 init.normal_(f)
             else:
                 raise NotImplementedError
+        if initms=='unif':
+            init.uniform_(self.core)
+        elif initms=='normal':
+            init.normal_(self.core)
 
 
 #    @weak_script_method
     def forward(self, input):
         #input: indexes, batch*dim, torch.long
         vals = torch.zeros(input.shape[0]).to(input.device)
-        for b in input.shape[0]:
-            inputd = input[d]
-            factors = [self.factors[i][inputd[i]] for i in range(input.shape[1])]
-            vals[b] = tl.tucker_to_vec(self.core, factors)
+        for b in range(input.shape[0]):
+            inputd = input[b]
+            factors = [self.factors[i][inputd[i], :].reshape((1, -1)) 
+                for i in range(input.shape[1])]
+            vals[b] = tensorly.tucker_to_vec((self.core, factors))
         return vals
     
     def prior_theta(self):
-        self.lamb.data.clamp_min_(1e-6)
+        for l in self.lamb:
+            l.data.clamp_min_(1e-6)
         
                
         ret = 0
-        for f in self.factors:
-            ret += torch.sum(torch.sum(f**2, dim=0) / self.lamb / 2)
-        ret += torch.sum(torch.log(self.lamb))*sum(self.size)/ 2
+        for f, l in zip(self.factors, self.lamb):
+            ret += torch.sum(torch.sum(f**2, dim=0) / l / 2)
+        ret += torch.sum(torch.log(l))*sum(self.size)/ 2
         
-        TODO
+        core2 = self.core ** 2
+        for d, l in enumerate(list(self.lamb)):
+            s = [1] * len(self.rank)
+            s[d] = -1
+            l = l.reshape(s)
+            core2 = core2 / l
+            ret -= core2.numel() / l.numel() * torch.sum(l) / 2
+#            core2 = self.core ** 2
+        ret += torch.sum(core2) * self.c / 2
 #        for f in self.factors:
 #            ret += torch.sum(torch.sum(f**2, dim=0) * self.lamb)
 #        ret -= torch.sum(torch.log(self.lamb))*sum(self.size)/ 2
          
-        ret += torch.sum(self.beta / self.lamb)
-        ret += (self.alpha + 1) * torch.sum(torch.log(self.lamb))
+        for l in self.lamb:
+            ret += torch.sum(self.beta / l)
+            ret += (self.alpha + 1) * torch.sum(torch.log(l))
     
 
         return ret 
     def prior_tau_exp(self):
         return -self.c * self.tau + torch.exp(self.tau) / self.d
         
-    def prior_theta_exp(self):        
-               
-        ret = 0
-        for f in self.factors:
-            ret += torch.sum(torch.sum(f**2, dim=0) * torch.exp(self.lamb))
-        ret -= sum(self.size) * torch.sum(self.lamb) / 2
-        
-
-        ret -= self.alpha * torch.sum(self.lamb)
-        ret += torch.sum(torch.exp(self.lamb)) / self.beta
-      
-        return ret 
-    
-#    def prior_tau(self):
-#        self.tau.data.clamp_min_(1e-6)
-#        
-#        return (self.c+1) * torch.log(self.tau) + self.d / self.tau
     
     
         
