@@ -14,11 +14,12 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 from tqdm import tqdm
 from tensor_layer import TTlinear
+import time
 
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-    
+
         self.fc1 = TTlinear((4,7,4,7), (4, 5, 5, 5), (20, 20, 20), beta=2)
         self.fc2 = TTlinear((20, 25), (2, 5), (20,), beta=5)
 
@@ -27,13 +28,13 @@ class Net(nn.Module):
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
         return x
-    
+
     def regularizer(self):
         ret = 0
         for m in self.modules():
             if isinstance(m, TTlinear):
                 ret += m.regularizer()
-                
+
         return ret
 
 if __name__ == '__main__':
@@ -59,7 +60,7 @@ if __name__ == '__main__':
                         help='Don\'t Use Bayesian model')
     parser.add_argument('--no-save-model', action='store_true', default=False,
                         help='For Saving the current Model')
-    
+
     args = parser.parse_args()
     use_cuda = not args.no_cuda and torch.cuda.is_available()
 
@@ -84,7 +85,7 @@ if __name__ == '__main__':
 
 
     model = Net().to(device)
-    
+
 #    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
     optimizer = optim.Adam(model.parameters())
     criterian = nn.CrossEntropyLoss()
@@ -93,7 +94,7 @@ if __name__ == '__main__':
         pbar = tqdm(total=len(train_loader.dataset), desc='Iter {}'.format(epoch))
         for batch_idx, (data, target) in enumerate(train_loader):
             data, target = data.to(device), target.to(device)
-            
+
             optimizer.zero_grad()
             output = model(data)
             loss = criterian(output, target)
@@ -104,7 +105,7 @@ if __name__ == '__main__':
             pbar.set_postfix_str('loss: {:0.4f}'.format(loss.item()), refresh=False)
             pbar.update(len(data))
         pbar.close()
-                
+
         model.eval()
         test_loss = 0
         correct = 0
@@ -115,7 +116,7 @@ if __name__ == '__main__':
                 test_loss += criterian(output, target).item() # sum up batch loss
                 pred = output.argmax(dim=1, keepdim=True) # get the index of the max log-probability
                 correct += pred.eq(target.view_as(pred)).sum().item()
-    
+
         test_loss /= len(test_loader)
 
         print('Test set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)'.format(
@@ -127,5 +128,5 @@ if __name__ == '__main__':
             torch.save(model.state_dict(),"../models/fashion_mnist_fc_tt_nobf.pth")
         else:
             torch.save(model.state_dict(),"../models/fashion_mnist_fc_tt.pth")
-        
+
 

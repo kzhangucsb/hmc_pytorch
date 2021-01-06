@@ -6,7 +6,7 @@ Created on Tue Aug  6 15:52:59 2019
 @author: zkq
 """
 
-from __future__ import print_function
+
 import torch
 import math
 import torch.nn.functional as F
@@ -30,7 +30,7 @@ class bfcp(Module):
         self.c = Parameter(torch.tensor(c), requires_grad=False)
         self.d = Parameter(torch.tensor(d), requires_grad=False)
 #        self.lamb = torch.Tensor(self.rank)
-        
+
         self.factors = ParameterList([Parameter(torch.Tensor(s, rank)) for s in size])
         self.reset_parameters(init)
 
@@ -60,54 +60,54 @@ class bfcp(Module):
 
             vals = vals + tmpvals
         return vals
-    
+
     def prior_theta(self):
         self.lamb.data.clamp_min_(1e-6)
-        
-               
+
+
         ret = 0
         for f in self.factors:
             ret += torch.sum(torch.sum(f**2, dim=0) / self.lamb / 2)
         ret += torch.sum(torch.log(self.lamb))*sum(self.size)/ 2
-        
+
 #        for f in self.factors:
 #            ret += torch.sum(torch.sum(f**2, dim=0) * self.lamb)
 #        ret -= torch.sum(torch.log(self.lamb))*sum(self.size)/ 2
-         
+        """inverse gamma distribution"""
         ret += torch.sum(self.beta / self.lamb)
         ret += (self.alpha + 1) * torch.sum(torch.log(self.lamb))
-    
 
-        return ret 
+
+        return ret
     def prior_tau_exp(self):
         return -self.c * self.tau + torch.exp(self.tau) / self.d
-        
-    def prior_theta_exp(self):        
-               
+
+    def prior_theta_exp(self):
+
         ret = 0
         for f in self.factors:
             ret += torch.sum(torch.sum(f**2, dim=0) * torch.exp(self.lamb))
         ret -= sum(self.size) * torch.sum(self.lamb) / 2
-        
+
 
         ret -= self.alpha * torch.sum(self.lamb)
         ret += torch.sum(torch.exp(self.lamb)) / self.beta
-      
-        return ret 
-    
+
+        return ret
+
 #    def prior_tau(self):
 #        self.tau.data.clamp_min_(1e-6)
-#        
+#
 #        return (self.c+1) * torch.log(self.tau) + self.d / self.tau
-    
-    
-        
+
+
+
     def extra_repr(self):
         return 'size={}, rank={}, alpha={}, beta={}, c={}, d={}'.format(
-            self.size, self.rank, self.alpha.item(), self.beta.item(), 
+            self.size, self.rank, self.alpha.item(), self.beta.item(),
             self.c.item(), self.d.item()
         )
-        
+
     def full(self):
         return tensorly.kruskal_to_tensor(
                 (torch.ones(self.rank, device=self.lamb.device), self.factors))
@@ -116,28 +116,29 @@ class bfcp(Module):
 def regulized_loss(loss, model, len_dataset):
     loss_n = loss * (len_dataset * torch.exp(model.tau)/2)
     loss_n -= 0.5 * len_dataset * model.tau
-        
+
     loss_n += model.prior_theta() #/ 1e2  #/ len(data)
     loss_n += model.prior_tau_exp() #/ 1e2 # 1e-2
     return loss_n
-        
+
 
 class bftucker(Module):
-    def __init__(self, size, rank, alpha = 1, beta = 0.2, c = 1, d = 1e6, init='unif'):
+    def __init__(self, size, rank, alpha = 1, beta = 0.2, c = 1, d = 1e6, e= 1, init='unif'):
         super(bftucker, self).__init__()
         self.size = size
         self.rank = rank
         self.dim = len(size)
-        
+
         self.tau  = Parameter(torch.tensor(1.0))
         self.alpha = Parameter(torch.tensor(alpha), requires_grad=False)
         self.beta = Parameter(torch.tensor(beta), requires_grad=False)
         self.c = Parameter(torch.tensor(c), requires_grad=False)
         self.d = Parameter(torch.tensor(d), requires_grad=False)
+        self.e = Parameter(torch.tensor(e), requires_grad=False)
 #        self.lamb = torch.Tensor(self.rank)
-        
+
         self.lamb = ParameterList([Parameter(torch.Tensor(r)) for r in rank])
-        self.factors = ParameterList([Parameter(torch.Tensor(s, r)) 
+        self.factors = ParameterList([Parameter(torch.Tensor(s, r))
             for (s, r) in zip(size, rank)])
         self.core = Parameter(torch.zeros(rank))
         self.reset_parameters(init)
@@ -165,21 +166,21 @@ class bftucker(Module):
         vals = torch.zeros(input.shape[0]).to(input.device)
         for b in range(input.shape[0]):
             inputd = input[b]
-            factors = [self.factors[i][inputd[i], :].reshape((1, -1)) 
+            factors = [self.factors[i][inputd[i], :].reshape((1, -1))
                 for i in range(input.shape[1])]
             vals[b] = tensorly.tucker_to_vec((self.core, factors))
         return vals
-    
+
     def prior_theta(self):
         for l in self.lamb:
             l.data.clamp_min_(1e-6)
-        
-               
+
+
         ret = 0
         for f, l in zip(self.factors, self.lamb):
             ret += torch.sum(torch.sum(f**2, dim=0) / l / 2)
         ret += torch.sum(torch.log(l))*sum(self.size)/ 2
-        
+
         core2 = self.core ** 2
         for d, l in enumerate(list(self.lamb)):
             s = [1] * len(self.rank)
@@ -188,29 +189,29 @@ class bftucker(Module):
             core2 = core2 / l
             ret -= core2.numel() / l.numel() * torch.sum(l) / 2
 #            core2 = self.core ** 2
-        ret += torch.sum(core2) * self.c / 2
+        ret += torch.sum(core2) * self.e / 2
 #        for f in self.factors:
 #            ret += torch.sum(torch.sum(f**2, dim=0) * self.lamb)
 #        ret -= torch.sum(torch.log(self.lamb))*sum(self.size)/ 2
-         
+
         for l in self.lamb:
             ret += torch.sum(self.beta / l)
             ret += (self.alpha + 1) * torch.sum(torch.log(l))
-    
 
-        return ret 
+
+        return ret
     def prior_tau_exp(self):
         return -self.c * self.tau + torch.exp(self.tau) / self.d
-        
-    
-    
-        
+
+
+
+
     def extra_repr(self):
         return 'size={}, rank={}, alpha={}, beta={}, c={}, d={}'.format(
-            self.size, self.rank, self.alpha.item(), self.beta.item(), 
+            self.size, self.rank, self.alpha.item(), self.beta.item(),
             self.c.item(), self.d.item()
         )
-        
+
     def full(self):
         return tensorly.kruskal_to_tensor(
                 (torch.ones(self.rank, device=self.lamb.device), self.factors))
@@ -219,8 +220,7 @@ class bftucker(Module):
 def regulized_loss(loss, model, len_dataset):
     loss_n = loss * (len_dataset * torch.exp(model.tau)/2)
     loss_n -= 0.5 * len_dataset * model.tau
-        
+
     loss_n += model.prior_theta() #/ 1e2  #/ len(data)
     loss_n += model.prior_tau_exp() #/ 1e2 # 1e-2
     return loss_n
-        

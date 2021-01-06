@@ -11,15 +11,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import time
 from torchvision import datasets, transforms
 from tqdm import tqdm
-from vgg_tensor_1 import vggBC_TT
+from vgg_tensor_1 import vggBC_TT, vggBC_TT2
 from copy import deepcopy
 #from hmc_sampler_optimizer import hmcsampler
 
 
 
-    
+
 
 if __name__ == '__main__':
     # Training settings
@@ -72,7 +73,7 @@ if __name__ == '__main__':
 
 
 #    model = Net().to(device)
-    model = vggBC_TT().to(device)
+    model = vggBC_TT2().to(device)
 #    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     optimizer = optim.Adam(model.parameters())
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: (epoch+1)**(-0.5))
@@ -90,12 +91,12 @@ if __name__ == '__main__':
                 loss += model.regularizer() / len(train_loader.dataset)
             loss.backward()
             optimizer.step()
-            
+
             bar.set_postfix_str('loss: {:0.6f}'.format(loss.item()), refresh=False)
             bar.update(len(data))
 
-        bar.close()       
-            
+        bar.close()
+
         model.eval()
         test_loss = 0
         correct = 0
@@ -106,11 +107,11 @@ if __name__ == '__main__':
                 test_loss += criterian(output, target).item() # sum up batch loss
                 pred = output.argmax(dim=1) # get the index of the max log-probability
                 correct += pred.eq(target).sum().item()
-    
+
         test_loss /= len(test_loader)
         if (epoch + 1) % 20 == 0:
             scheduler.step()
-    
+
         print('Test set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)'.format(
             test_loss, correct, len(test_loader.dataset),
             100. * correct / len(test_loader.dataset)), flush=True)
@@ -119,7 +120,7 @@ if __name__ == '__main__':
             ths = getattr(model, layer).get_lamb_ths()
             rank_i = []
             for i in range(len(ths)):
-                ind = list(np.where(getattr(model, layer).lamb[i].detach().cpu().numpy() 
+                ind = list(np.where(getattr(model, layer).lamb[i].detach().cpu().numpy()
                     < ths[i] - 0.1)[0])
                 rank_i.append(len(ind))
             rank.append(rank_i)
@@ -128,18 +129,20 @@ if __name__ == '__main__':
 
     if args.no_bf:
         if (args.save_model):
-            torch.save(model.state_dict(),"../models/cifar_vggbc_nobf_TT.pth")
+            torch.save(model.state_dict(),
+                       "../models/cifar_vggbc_nobf_TT_{}.pth".format(int(np.round(time.time()))))
     else:
         if (args.save_model):
-            torch.save(model.state_dict(),"../models/cifar_vggbc_TT.pth")
-           
+            torch.save(model.state_dict(),
+                       "../models/cifar_vggbc_TT_{}.pth".format(int(np.round(time.time()))))
+
         state_dict = deepcopy(model.state_dict())
         rank = []
         for layer in ['conv1', 'conv2', 'conv3', 'fc0', 'fc1']:
             ths = getattr(model, layer).get_lamb_ths()
             rank_i = []
             for i in range(len(ths)):
-                ind = list(np.where(state_dict['{}.lamb.{}'.format(layer, i)].cpu().numpy() 
+                ind = list(np.where(state_dict['{}.lamb.{}'.format(layer, i)].cpu().numpy()
                     < ths[i] - 0.03)[0])
                 rank_i.append(len(ind))
     #            state_dict['{}.lamb.{}'.format(layer, i)] = \
@@ -150,4 +153,4 @@ if __name__ == '__main__':
     #                state_dict['{}.factors.{}'.format(layer, i+1)][ind,:,:,:]
             rank.append(rank_i)
         print('rank={}'.format(rank), flush=True)
-    
+

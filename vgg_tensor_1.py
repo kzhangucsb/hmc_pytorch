@@ -167,3 +167,55 @@ class vggBC_TT(nn.Module):
         for i in range(2):
             ret += getattr(self, 'fc{}'.format(i)).regularizer(exp=exp)
         return ret
+    
+class vggBC_TT2(nn.Module):
+    
+    def __init__(self, rank=[[16, 32, 16], [16, 32, 16], [16, 32, 16], [64, 64], [32]]):
+        super(vggBC_TT2, self).__init__()
+        assert(len(rank) == 5)
+        beta_conv = 5
+#        beta_fc = 5
+        self.conv0  = nn.Conv2d(3, 128, 3, padding=1)
+        self.conv1  = TTConv2d((16, 1, 8, 1), (1, 16, 1, 16), 3, rank[0], padding=1, alpha = 2, beta=beta_conv)
+        self.conv2  = TTConv2d((16, 1, 16, 1), (1, 16, 1, 16), 3, rank[1], padding=1, alpha = 2, beta=beta_conv)
+        self.conv3  = TTConv2d((16, 1, 16, 1), (1, 16, 1, 16), 3, rank[2], padding=1, alpha = 2, beta=beta_conv)
+        
+            
+        self.bn0    = nn.BatchNorm2d(128)
+        self.bn1    = nn.BatchNorm2d(256)
+        self.bn2    = nn.BatchNorm2d(256)
+#        self.bn3    = nn.BatchNorm2d(256)
+        self.bn3    = nn.BatchNorm1d(256*8*8)
+        self.bn4    = nn.BatchNorm1d(512)
+        
+        self.fc0 = TTlinear((16, 16, 64), (4, 8, 16), rank[3], alpha = 2, beta=beta_conv)
+        self.fc1 = TTlinear((32, 16), (5, 2), rank[4], alpha = 2, beta=beta_conv)
+        
+#        self.dropout0 = nn.Dropout()
+#        self.dropout1 = nn.Dropout()
+        
+        
+        
+    
+    def forward(self, x):
+        x = F.relu(self.bn0(self.conv0(x)))
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.max_pool2d(x, kernel_size=2, stride=2)
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = F.relu(self.conv3(x))
+        x = F.max_pool2d(x, kernel_size=2, stride=2)
+        
+        x = x.reshape((x.shape[0], -1)) 
+        x = self.bn3(x)
+        x = F.relu(self.bn4(self.fc0(x)))
+#        x = self.dropout0(x)
+        x = self.fc1(x)
+        return x
+
+    def regularizer(self, exp=True):
+        ret = 0
+        for i in range(1, 4):
+            ret += getattr(self, 'conv{}'.format(i)).regularizer(exp=exp)
+        for i in range(2):
+            ret += getattr(self, 'fc{}'.format(i)).regularizer(exp=exp)
+        return ret

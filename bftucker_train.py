@@ -103,7 +103,7 @@ for epoch in range(nepoch):
         
         loss_train += loss.item() 
 
-        loss = regulized_loss(loss, model, len(train_loader.dataset)) 
+#        loss = regulized_loss(loss, model, len(train_loader.dataset)) 
         loss_train2 += loss.item() 
         loss.backward()
         optimizer.step()

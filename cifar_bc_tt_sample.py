@@ -17,6 +17,7 @@ from tqdm import tqdm
 from vgg_tensor_1 import vggBC_TT
 from copy import deepcopy
 from hmc_sampler_optimizer import hmcsampler, modelsaver_test
+import time
 
 
 def test(model, test_loader, criterian):
@@ -36,7 +37,7 @@ def test(model, test_loader, criterian):
     print('Test set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)'.format(
         test_loss, correct, len(test_loader.dataset),
         100. * correct / len(test_loader.dataset)), flush=True)
-    
+
 
 if __name__ == '__main__':
     # Training settings
@@ -55,7 +56,7 @@ if __name__ == '__main__':
                         help='Don\'t Use Bayesian model')
 #    parser.add_argument('--seed', type=int, default=1, metavar='S',
 #                        help='random seed (default: 1)')
-    
+
     parser.add_argument('--save-result', action='store_true', default=True,
                         help='For Saving the current result')
     args = parser.parse_args()
@@ -87,9 +88,9 @@ if __name__ == '__main__':
 
 #    model = Net().to(device)
 #    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    
+
     criterian = nn.CrossEntropyLoss()
-    
+
     if args.no_bf:
         model = vggBC_TT().to(device)
         state_dict = torch.load("../models/cifar_vggbc_nobf_TT.pth")
@@ -99,14 +100,14 @@ if __name__ == '__main__':
         state_dict = torch.load("../models/cifar_vggbc_TT.pth")
         model_o.load_state_dict(state_dict)
         test(model_o, test_loader, criterian)
-    
+
         rank = []
         for (layer, ths_o) in zip(['conv1', 'conv2', 'conv3', 'fc0', 'fc1'],
                                   [   0.03,    0.03,    0.03,  0.015,  0.25]):
             ths = getattr(model_o, layer).get_lamb_ths()
             rank_i = []
             for i in range(len(ths)):
-                ind = list(np.where(state_dict['{}.lamb.{}'.format(layer, i)].cpu().numpy() 
+                ind = list(np.where(state_dict['{}.lamb.{}'.format(layer, i)].cpu().numpy()
                     < ths[i] - ths_o)[0])
                 rank_i.append(len(ind))
                 state_dict['{}.lamb.{}'.format(layer, i)] = \
@@ -127,22 +128,22 @@ if __name__ == '__main__':
                         state_dict['{}.factors.{}'.format(layer, i+1)][ind,:,:,:]
             rank.append(rank_i)
         print('rank={}'.format(rank), flush=True)
-        
+
         model = vggBC_TT(rank).to(device)
         model.load_state_dict(state_dict)
-        test(model, test_loader, criterian)        
-        
-    
+        test(model, test_loader, criterian)
+
+
     def forwardfcn(x):
         with torch.no_grad():
             x = x.to(device)
             x = model(x)
             x = x.cpu()
         return x
-    
-    
+
+
     modelsaver = modelsaver_test(forwardfcn, test_loader)
-    
+
     sampler = hmcsampler(model.parameters(), sampler=modelsaver, max_length=1e-3)
 
     while(len(sampler.samples) < args.num_samples):
@@ -155,8 +156,8 @@ if __name__ == '__main__':
             loss += model.regularizer()
             loss.backward()
             sampler.step()
-            
-            
+
+
 #        model.eval()
 #        test_loss = 0
 #        correct = 0
@@ -167,38 +168,41 @@ if __name__ == '__main__':
 #                test_loss += criterian(output, target).item() # sum up batch loss
 #                pred = output.argmax(dim=1) # get the index of the max log-probability
 #                correct += pred.eq(target).sum().item()
-#    
+#
 #        test_loss /= len(test_loader)
 #        if (epoch + 1) % 20 == 0:
 #            scheduler.step()
-    
-    p = []        
+
+    p = []
     for s in sampler.samples[args.samples_discarded: args.num_samples]:
         s_softmax = F.log_softmax(s, dim=1)
         p.append(s_softmax)
     p = torch.stack(p, dim=2)
-    p = torch.logsumexp(p, dim=2) - np.log(p.shape[2])
-    
+    weights = torch.Tensor(sampler.weights[
+        args.samples_discarded: args.num_samples]).reshape([1, 1, -1])
+
+    # p = torch.logsumexp(p, dim=2) - np.log(p.shape[2])
+    p = torch.logsumexp(p + torch.log(weights), dim=2) - np.log(torch.sum(weights))
+
     target = sampler.sampler.target
     pred = torch.argmax(p, dim=1)
     correct = pred.eq(target).sum().item()
     LL = F.nll_loss(p, target)
-    
+
 
     print('Overall prediction: Loss {:0.4f}, Accuracy: {}/{} ({:.0f}%)'.format(
         LL, correct, len(test_loader.dataset),
         100. * correct / len(test_loader.dataset)), flush=True)
 
-        
 
-    
 
+
+    savefilename = "../models/cifar_vggbc_TT{}_samples_{0.0f}.pth".format(
+        '_nobf' if args.no_bf else '', time.time())
     if (args.save_result):
-        if args.no_bf:
-            torch.save({'target': modelsaver.target, 'samples': modelsaver.samples}, 
-                   "../models/cifar_vggbc_TT_nobf_samples.pth")
-        else:
-            torch.save({'target': modelsaver.target, 'samples': modelsaver.samples}, 
-                   "../models/cifar_vggbc_TT_samples.pth")
-        
+        torch.save({'target': modelsaver.target,
+                    'samples': modelsaver.samples,
+                    'weights': weights},
+               savefilename)
+
 
