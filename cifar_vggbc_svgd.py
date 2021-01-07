@@ -30,7 +30,7 @@ if __name__ == '__main__':
                         help='input batch size for training (default: 128)')
     parser.add_argument('--test-batch-size', type=int, default=128, metavar='N',
                         help='input batch size for testing (default: 128)')
-    parser.add_argument('--epochs', type=int, default=1, metavar='N',
+    parser.add_argument('--epochs', type=int, default=10, metavar='N',
                         help='Number of epoches to train')
     parser.add_argument('--num_samples', type=int, default=10, metavar='N',
                         help='number of sampels to get (default: 10)')
@@ -85,7 +85,6 @@ if __name__ == '__main__':
                 
                 bar.set_postfix_str('loss: {:0.6f}'.format(loss.item()), refresh=False)
                 bar.update(len(data))
-                break
 
     if args.save_result:
         torch.save([model.state_dict() for model in sampler.models],
