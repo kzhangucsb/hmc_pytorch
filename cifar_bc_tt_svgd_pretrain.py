@@ -20,7 +20,7 @@ from copy import deepcopy
 
 
 import os
-os.environ['CUDA_VISIBLE_DEVICES']=''
+os.environ['CUDA_VISIBLE_DEVICES']='0'
 
 
 if __name__ == '__main__':
@@ -126,6 +126,17 @@ if __name__ == '__main__':
                 rank_i.append(len(ind))
             rank.append(rank_i)
         print('rank={}'.format(rank), flush=True)
+
+
+        if (args.save_model) and args.epochs-epoch<15:
+
+            i = 0
+            while os.path.exists("saved_models/svgd_{}.pth".format(i)):
+                i+=1
+
+            torch.save(model.state_dict(),
+                       "saved_models/svgd_{}.pth".format(i))
+
 
 
     if args.no_bf:

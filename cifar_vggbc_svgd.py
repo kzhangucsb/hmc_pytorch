@@ -21,7 +21,8 @@ from hmc_sampler_optimizer import hmcsampler, modelsaver_test
 import time
 from svgd_base import SVGD_sampler
 from tqdm import tqdm
-
+import os
+os.environ['CUDA_VISIBLE_DEVICES']='0'
 
 if __name__ == '__main__':
     # Training settings
@@ -69,7 +70,49 @@ if __name__ == '__main__':
 
     criterian = nn.CrossEntropyLoss()
     sampler = SVGD_sampler(vggBC_TT, args.num_samples).to(device)
+    print("Evaluating initial model accuracy")
+    for i,model in enumerate(sampler.models):
         
+        model.eval()
+        test_loss = torch.zeros([1])
+        correct = torch.zeros([1])
+        with torch.no_grad():
+            for data, target in test_loader:
+                data, target = data.to(device), target.to(device)
+                output = model(data)
+                test_loss+=criterian(output,target).item()
+                pred= output.argmax(dim=1)
+                correct+=pred.eq(target).sum().item()
+            
+        test_loss /= len(test_loader)
+
+        print(i,test_loss,correct/10000)
+
+        
+        model.train()
+    
+
+    print("After loading models")
+    for i,model in enumerate(sampler.models):
+        model.load_state_dict(torch.load('saved_models/svgd_%s.pth'%(i)))
+        model.eval()
+        test_loss = torch.zeros([1])
+        correct = torch.zeros([1])
+        with torch.no_grad():
+            for data, target in test_loader:
+                data, target = data.to(device), target.to(device)
+                output = model(data)
+                test_loss+=criterian(output,target).item()
+                pred= output.argmax(dim=1)
+                correct+=pred.eq(target).sum().item()
+            
+        test_loss /= len(test_loader)
+
+        print(i,test_loss,correct/10000)
+
+        
+        model.train()
+
 
     for i_epoch in range(args.epochs):
         with tqdm(total=len(train_loader.dataset), desc='Iter {}'.format(i_epoch)) as bar:
@@ -85,6 +128,27 @@ if __name__ == '__main__':
                 
                 bar.set_postfix_str('loss: {:0.6f}'.format(loss.item()), refresh=False)
                 bar.update(len(data))
+    
+        print("Evaluating initial model accuracy")
+        for i,model in enumerate(sampler.models):
+            
+            model.eval()
+            test_loss = torch.zeros([1])
+            correct = torch.zeros([1])
+            with torch.no_grad():
+                for data, target in test_loader:
+                    data, target = data.to(device), target.to(device)
+                    output = model(data)
+                    test_loss+=criterian(output,target).item()
+                    pred= output.argmax(dim=1)
+                    correct+=pred.eq(target).sum().item()
+                
+            test_loss /= len(test_loader)
+
+            print(i,test_loss,correct/10000)
+
+            
+            model.train()
 
     if args.save_result:
         torch.save([model.state_dict() for model in sampler.models],

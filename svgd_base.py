@@ -11,21 +11,22 @@ class SVGD:
         self.iter=0
 
     def SVGD_kernal(self, x, h=-1):
-        init_dist = pdist(x)
-        pairwise_dists = torch.tensor(squareform(init_dist),dtype=torch.float)
+        init_dist = pdist(x.cpu())
+        pairwise_dists = torch.tensor(squareform(init_dist),dtype=torch.float).to(x.device)
+
         if h < 0:  # if h < 0, using median trick
             h = torch.median(pairwise_dists)
-            h = torch.tensor(h ** 2 / np.log(x.shape[0] + 1),dtype=torch.float)
+            h = torch.tensor(h ** 2 / np.log(x.shape[0] + 1),dtype=torch.float).to(x.device)
 
         kernal_xj_xi = torch.exp(- pairwise_dists ** 2 / h)
-        d_kernal_xi = torch.zeros(x.shape)
+        d_kernal_xi = torch.zeros(x.shape).to(x.device)
 
         for i_index in range(x.shape[0]):
             d_kernal_xi[i_index] = torch.matmul(kernal_xj_xi[i_index], x[i_index] - x) * 2 / h
 
         return kernal_xj_xi, d_kernal_xi
 
-    def update(self, x0, grad_x0, stepsize=1e-3, bandwidth=-1, alpha=0.9, debug=False):
+    def update(self, x0, grad_x0, stepsize=1e-4, bandwidth=-1, alpha=0.9, debug=False):
 
         x = x0
 
@@ -87,7 +88,7 @@ class SVGD_sampler:
             
     def step(self, *args, **kwargs):
         self._model_to_params()
-        self.svgd.update(self.params, self.grads, *args, **kwargs)
+        self.svgd.update(self.params, -self.grads, *args, **kwargs)
         self._params_to_model()
         
     def getloss(self, data, target, criterian):
